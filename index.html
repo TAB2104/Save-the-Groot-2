@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Save the Groot</title>
+    <style>
+        /* ---------- 1. Grund-Layout ---------- */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #050515;
+            font-family: sans-serif;
+            user-select: none;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            background: #050515;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        /* ---------- 2. UI-Overlays ---------- */
+        #ui {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        #top-left {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            display: none; 
+        }
+        #score, #lives {
+            color: #fff;
+            font-size: 1.8rem;
+            text-shadow: 0 0 8px #000;
+        }
+
+        /* Boost-Anzeige */
+        #boost-container {
+            margin-top: 5px;
+            width: 150px;
+            height: 14px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid #fff;
+            border-radius: 7px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+        }
+        #boost-bar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff4500, #ff8c00, #ffd700);
+            transition: width 0.05s linear;
+        }
+
+        #controls-info {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.0rem;
+            text-shadow: 0 0 6px #000;
+            background: rgba(0, 0, 0, 0.65);
+            padding: 8px 20px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+
+        #startMenu, #gameover, #pauseMsg {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 2.8rem;
+            text-align: center;
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.88);
+            padding: 2.5rem 3.5rem;
+            border-radius: 16px;
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.2);
+        }
+
+        #startMenu { display: block; }
+        #gameover, #pauseMsg { display: none; }
+
+        .menu-subtext {
+            font-size: 1.3rem;
+            margin-top: 12px;
+            color: #ccc;
+        }
+
+        /* Death-Screen Statistik-Box */
+        .stats-box {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 1rem 1.5rem;
+            margin: 1.2rem 0;
+            text-align: left;
+            font-size: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .stats-box div {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .stats-box span {
+            font-weight: bold;
+            color: #00ffff;
+        }
+
+        /* Schwierigkeitsgrad-Auswahl */
+        .difficulty-select {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .diff-btn {
+            margin-top: 0 !important;
+            font-size: 1rem !important;
+            padding: 0.5rem 1.2rem !important;
+            background-color: #444 !important;
+            border: 2px solid transparent !important;
+            opacity: 0.7;
+        }
+
+        .diff-btn.active {
+            opacity: 1;
+            border-color: #fff !important;
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+        }
+
+        .diff-btn[data-diff="easy"].active { background-color: #28a745 !important; }
+        .diff-btn[data-diff="normal"].active { background-color: #fd7e14 !important; }
+        .diff-btn[data-diff="hard"].active { background-color: #dc3545 !important; }
+
+        button {
+            margin-top: 1.8rem;
+            font-size: 1.2rem;
+            padding: 0.7rem 1.6rem;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background-color: #28a745;
+            color: white;
+            transition: background 0.2s ease, transform 0.1s ease, opacity 0.2s ease;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        #startBtn:hover {
+            background-color: #218838;
+        }
+        #pauseRestartBtn {
+            background-color: #dc3545;
+            margin-left: 12px;
+        }
+        #pauseRestartBtn:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div id="top-left">
+            <div id="score">Punkte: 0</div>
+            <div id="lives">❤️❤️❤️❤️❤️</div>
+            <div id="boost-container">
+                <div id="boost-bar"></div>
+            </div>
+        </div>
+
+        <div id="controls-info">
+            🎮 <strong>Leertaste</strong> = Springen | <strong>Shift</strong> = Sneaken | <strong>Caps</strong> = Boost | <strong>Linksklick</strong> = Schießen | <strong>ESC</strong> = Pause
+        </div>
+
+        <div id="startMenu">
+            <div>🚀 Save the Groot</div>
+            <div class="menu-subtext">Weiche Hindernissen aus & schieße laufende und Mini-Aliens ab!</div>
+            
+            <div class="difficulty-select">
+                <button class="diff-btn" data-diff="easy">Einfach</button>
+                <button class="diff-btn active" data-diff="normal">Normal</button>
+                <button class="diff-btn" data-diff="hard">Schwer</button>
+            </div>
+
+            <button id="startBtn">Spiel starten</button>
+        </div>
+
+        <div id="gameover">
+            <div>💥 Game Over!</div>
+            <div class="stats-box">
+                <div><span>Erreichte Punkte:</span> <span id="stat-score">0</span></div>
+                <div><span>Verlorene Herzen:</span> <span id="stat-hearts">0</span></div>
+                <div><span>Ausgewichene Meteoriten:</span> <span id="stat-meteors">0</span></div>
+                <div><span>Eliminierte Aliens:</span> <span id="stat-aliens">0</span></div>
+            </div>
+            <button id="restartBtn">Nochmal spielen</button>
+        </div>
+
+        <div id="pauseMsg">
+            <div>⏸️ Spiel pausiert</div>
+            <div class="menu-subtext">Drücke <strong>ESC</strong> zum Fortsetzen</div>
+            <div>
+                <button id="resumeBtn">Weiter</button>
+                <button id="pauseRestartBtn">Neustart</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* -------------------------------------------------------------
+         * 1. DATEINAMEN-KONFIGURATION
+         * ------------------------------------------------------------- */
+        const RUN_FRAME_PATHS = [
+            'walk1.png',
+            'walk2.png',
+            'walk3.png'
+        ];
+
+        const JUMP_FRAME_PATH = 'walk1.png';
+        const BG_IMAGE_PATH   = 'bg.png';        
+        const ASTEROID_PATH   = 'asteroid.png';  
+        const ALIEN_PATH      = 'alien.png';
+        const MINI_ALIEN_PATH = 'mini.png';
+
+        // INTRO DATEIEN
+        const SHIP_PATH = 'ship.png';
+        const GROOT_FRAME_PATHS = [
+            'groot1.png',
+            'groot2.png',
+            'groot3.png'
+        ];
+
+        /* -------------------------------------------------------------
+         * 2. Canvas & Globale Variablen
+         * ------------------------------------------------------------- */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx    = canvas.getContext('2d');
+
+        const topLeftDiv      = document.getElementById('top-left');
+        const scoreEl         = document.getElementById('score');
+        const livesEl         = document.getElementById('lives');
+        const boostBarEl      = document.getElementById('boost-bar');
+        const startMenuDiv    = document.getElementById('startMenu');
+        const startBtn        = document.getElementById('startBtn');
+        const gameOverDiv     = document.getElementById('gameover');
+        const restartBtn      = document.getElementById('restartBtn');
+        const pauseMsg        = document.getElementById('pauseMsg');
+        const resumeBtn       = document.getElementById('resumeBtn');
+        const pauseRestartBtn = document.getElementById('pauseRestartBtn');
+        const diffBtns        = document.querySelectorAll('.diff-btn');
+
+        const GROUND_HEIGHT = 65; 
+        const TARGET_PLAYER_X = 240; 
+        
+        // SPRUNG-PHYSIK
+        const GRAVITY       = 0.65;
+        const JUMP_VELOCITY = -20.5;
+
+        // BOOST-EINSTELLUNGEN
+        let boostCharge = 100; 
+        const BOOST_MAX_CHARGE = 100;
+        const BOOST_RECHARGE_RATE = 100 / 60; 
+        const BOOST_FORWARD_DISTANCE = 160; 
+        let isBoosting = false;
+        let boostVelX = 0;
+        const boostParticles = [];
+
+        // SCHUSS- & FADENKREUZ-EINSTELLUNGEN
+        const SHOOT_COOLDOWN_MS = 350; 
+        const MAX_SHOOT_RANGE   = 450; 
+        let lastShootTime       = 0;
+        let mouseX = -100;
+        let mouseY = -100;
+
+        // MINI-ALIEN EINSTELLUNGEN
+        const miniAliens = [];
+        const miniAlienProjectiles = [];
+        const MINI_ALIEN_SIZE = 75; 
+        const MINI_ALIEN_COLOR = '#ffcc00';
+        const MINI_ALIEN_PROJECTILE_SPEED = 1.6; 
+        const MINI_ALIEN_SHOOT_INTERVAL = 2600;   
+        const MINI_ALIEN_COOLDOWN_MS = 22000;     
+        let lastMiniAlienTime = 0;
+
+        // DEATH-SCREEN STATISTIK ZÄHLER
+        let statHeartsLost = 0;
+        let statMeteorsDodged = 0;
+        let statAliensEliminated = 0;
+
+        // Start-Verzögerung für Hindernisse (in Sekunden)
+        const SPAWN_DELAY_SECONDS = 4.0;
+        let gameTimeElapsed = 0;
+
+        // Schwierigkeitsgrade Einstellungen (alle identisch auf Normal-Werten)
+        const DIFFICULTY_SETTINGS = {
+            easy:   { speed: 3.5, minGap: 750, maxGap: 1100, speedInc: 0.012, heart1: 0.001, heart2: 0.0003, miniAlienProbability: 0.0009, maxLives: 5 },
+            normal: { speed: 3.5, minGap: 750, maxGap: 1100, speedInc: 0.012, heart1: 0.001, heart2: 0.0003, miniAlienProbability: 0.0009, maxLives: 5 },
+            hard:   { speed: 3.5, minGap: 750, maxGap: 1100, speedInc: 0.012, heart1: 0.001, heart2: 0.0003, miniAlienProbability: 0.0009, maxLives: 5 }
+        };
+        let currentDifficulty = 'normal';
+
+        const player = {
+            x: TARGET_PLAYER_X,
+            y: 0,
+            w: 175,
+            h: 175,
+            vy: 0,
+            frameIndex: 0,
+            frameTimer: 0,
+            grounded: false,
+            isDucking: false,
+            shiftHeld: false,
+            lives: 5,
+            invincibleTimer: 0
+        };
+
+        const bg = { x: 0, speed: 3.5 };
+        const obstacles = [];
+        const hearts = [];
+        const stars = [];
+        const projectiles = [];
+        const explosionParticles = [];
+
+        let score = 0;
+        let gameStarted = false;
+        let gameOver = false;
+        let isPaused = false;
+        let lastTime = 0;
+        let animFrameId = null;
+
+        let obstacleMinGap = 750; 
+        let obstacleMaxGap = 1100;
+        let nextObstacleGap = 800;
+
+        // INTRO VARIABLEN & STATUS
+        let isIntro = false;
+        let introPhase = 0; // 0: Einfliegen, 1: Aufsaugen, 2: Wegfliegen + Held läuft rein
+        let introShipSpeed = 0;
+        const introData = {
+            shipX: -400,
+            shipY: 100,
+            shipW: 380, 
+            shipH: 200, 
+            targetShipX: 0,
+            
+            grootX: 0,
+            grootY: 0,
+            grootW: 130,
+            grootH: 130,
+            grootFrame: 0,
+            grootFrameTimer: 0,
+            
+            beamAlpha: 0,
+            grootAlpha: 1,
+
+            // Neuer Held (Retter) der ins Bild läuft in Phase 2
+            heroX: -180,
+            heroY: 0,
+            heroW: 175,
+            heroH: 175,
+            heroFrame: 0,
+            heroFrameTimer: 0,
+            heroState: 'running', // 'running' oder 'standing'
+            speechTimer: 0
+        };
+
+        /* -------------------------------------------------------------
+         * 3. Laden der Bilder
+         * ------------------------------------------------------------- */
+        const runImages = [];
+        RUN_FRAME_PATHS.forEach(path => {
+            const img = new Image();
+            img.src = path;
+            runImages.push(img);
+        });
+
+        const jumpImage = new Image();
+        jumpImage.src = JUMP_FRAME_PATH;
+
+        const bgImage = new Image();
+        bgImage.src = BG_IMAGE_PATH;
+
+        const asteroidImage = new Image();
+        asteroidImage.src = ASTEROID_PATH;
+
+        const alienImage = new Image();
+        alienImage.src = ALIEN_PATH;
+
+        const miniAlienImage = new Image();
+        miniAlienImage.src = MINI_ALIEN_PATH;
+
+        // Intro Bilder
+        const shipImage = new Image();
+        shipImage.src = SHIP_PATH;
+
+        const grootImages = [];
+        GROOT_FRAME_PATHS.forEach(path => {
+            const img = new Image();
+            img.src = path;
+            grootImages.push(img);
+        });
+
+        function isImageReady(img) {
+            return img && img.complete && img.naturalWidth !== 0;
+        }
+
+        /* -------------------------------------------------------------
+         * 4. Canvas- & Sterne-Setup
+         * ------------------------------------------------------------- */
+        function initStars() {
+            stars.length = 0;
+            const w = window.innerWidth || 800;
+            const h = window.innerHeight || 600;
+            for (let i = 0; i < 80; i++) {
+                stars.push({
+                    x: Math.random() * w,
+                    y: Math.random() * h,
+                    size: Math.random() * 2.5 + 1,
+                    speedFactor: Math.random() * 0.5 + 0.2
+                });
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (player) {
+                player.y = canvas.height - player.h - GROUND_HEIGHT;
+            }
+            initStars();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        /* -------------------------------------------------------------
+         * 5. Intro & Spielablauf & Steuerung
+         * ------------------------------------------------------------- */
+        diffBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                diffBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentDifficulty = btn.dataset.diff;
+                updateLivesDisplay();
+            });
+        });
+
+        function updateLivesDisplay() {
+            const maxL = DIFFICULTY_SETTINGS[currentDifficulty].maxLives;
+            let heartsText = '';
+            for (let i = 0; i < maxL; i++) {
+                heartsText += (i < player.lives) ? '❤️' : '🖤';
+            }
+            livesEl.textContent = heartsText;
+        }
+
+        function updateBoostDisplay() {
+            boostBarEl.style.width = `${boostCharge}%`;
+        }
+
+        function triggerStart() {
+            if (gameStarted || isIntro) return;
+            startIntro();
+        }
+
+        function startIntro() {
+            isIntro = true;
+            gameStarted = false;
+            startMenuDiv.style.display = 'none';
+
+            introPhase = 0;
+            introShipSpeed = 850; // Schnelleres Einfliegen
+
+            introData.grootW = 130;
+            introData.grootH = 130;
+            introData.grootX = canvas.width * 0.55;
+            introData.grootY = canvas.height - introData.grootH - GROUND_HEIGHT;
+            introData.grootFrame = 0; // Ruhig stehen am Anfang
+            introData.grootFrameTimer = 0;
+            introData.grootAlpha = 1;
+
+            introData.shipW = 380; 
+            introData.shipH = 200; 
+            introData.shipX = -introData.shipW - 50;
+            introData.shipY = canvas.height * 0.25;
+            introData.targetShipX = introData.grootX + (introData.grootW / 2) - (introData.shipW / 2);
+
+            introData.beamAlpha = 0;
+
+            // Helden-Setup für Intro Phase 2
+            introData.heroW = 175;
+            introData.heroH = 175;
+            introData.heroX = -introData.heroW - 50;
+            introData.heroY = canvas.height - introData.heroH - GROUND_HEIGHT;
+            introData.heroFrame = 0;
+            introData.heroFrameTimer = 0;
+            introData.heroState = 'running';
+            introData.speechTimer = 0;
+        }
+
+        function updateIntro(delta) {
+            bg.x -= 0.8;
+            if (bg.x <= -canvas.width) bg.x = 0;
+
+            if (introPhase === 0) {
+                // Phase 0: Raumschiff fliegt schnell über die Person, Charakter steht still
+                introData.grootFrame = 0;
+                introData.shipX += introShipSpeed * delta;
+                if (introData.shipX >= introData.targetShipX) {
+                    introData.shipX = introData.targetShipX;
+                    introPhase = 1;
+                }
+            } else if (introPhase === 1) {
+                // Phase 1: Traktorstrahl an & Person wird hochgesaugt
+                introData.grootFrameTimer += delta * 30; // Sehr schnell!
+                if (introData.grootFrameTimer >= 1) {
+                    introData.grootFrame = (introData.grootFrame + 1) % Math.max(1, grootImages.length);
+                    introData.grootFrameTimer = 0;
+                }
+
+                if (introData.beamAlpha < 0.85) {
+                    introData.beamAlpha += delta * 2;
+                }
+
+                introData.grootY -= delta * 120; // Schwebegeschwindigkeit
+
+                const targetY = introData.shipY + introData.shipH * 0.5;
+                if (introData.grootY <= targetY) {
+                    introData.grootAlpha -= delta * 3;
+                    if (introData.grootAlpha <= 0) {
+                        introData.grootAlpha = 0;
+                        introPhase = 2;
+                        introShipSpeed = 300; // Höhere Startgeschwindigkeit fürs Wegfliegen
+                    }
+                }
+            } else if (introPhase === 2) {
+                // Phase 2: Traktorstrahl geht aus, Raumschiff beschleunigt rasant nach rechts weg
+                // UND Spielcharakter läuft von links ins Sichtfeld
+                if (introData.beamAlpha > 0) {
+                    introData.beamAlpha -= delta * 4;
+                    if (introData.beamAlpha < 0) introData.beamAlpha = 0;
+                }
+
+                introShipSpeed += delta * 3500; // Sehr schnelle Beschleunigung weg
+                introData.shipX += introShipSpeed * delta;
+
+                // Held läuft von links rein bis TARGET_PLAYER_X
+                if (introData.heroState === 'running') {
+                    introData.heroX += 280 * delta; // Laufgeschwindigkeit
+                    
+                    // Lauf-Animation
+                    if (runImages.length > 0) {
+                        introData.heroFrameTimer += delta * 12;
+                        if (introData.heroFrameTimer >= 1) {
+                            introData.heroFrame = (introData.heroFrame + 1) % runImages.length;
+                            introData.heroFrameTimer = 0;
+                        }
+                    }
+
+                    if (introData.heroX >= TARGET_PLAYER_X) {
+                        introData.heroX = TARGET_PLAYER_X;
+                        introData.heroState = 'standing';
+                        introData.heroFrame = 0; // Auf erste Frame (Stillstand) setzen
+                    }
+                } else if (introData.heroState === 'standing') {
+                    // Bleibt stehen und zeigt Sprechblase für 2.2 Sekunden
+                    introData.speechTimer += delta;
+                    if (introData.speechTimer >= 2.2) {
+                        // Intro beenden, echtes Spiel starten
+                        isIntro = false;
+                        gameStarted = true;
+                        topLeftDiv.style.display = 'flex';
+                        initGame();
+                    }
+                }
+            }
+        }
+
+        function renderIntro() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Hintergrund
+            if (isImageReady(bgImage)) {
+                ctx.drawImage(bgImage, bg.x, 0, canvas.width, canvas.height);
+                ctx.drawImage(bgImage, bg.x + canvas.width, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#050515';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffffff';
+                stars.forEach(star => {
+                    let sx = (star.x - bg.x * star.speedFactor) % canvas.width;
+                    if (sx < 0) sx += canvas.width;
+                    ctx.fillRect(sx, star.y, star.size, star.size);
+                });
+            }
+
+            // Boden
+            ctx.fillStyle = '#222244';
+            ctx.fillRect(0, canvas.height - GROUND_HEIGHT, canvas.width, GROUND_HEIGHT);
+
+            // 2. Traktorstrahl (unter Person & Schiff)
+            if (introData.beamAlpha > 0) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(1, Math.max(0, introData.beamAlpha));
+                
+                const beamTopX1 = introData.shipX + introData.shipW * 0.35;
+                const beamTopX2 = introData.shipX + introData.shipW * 0.65;
+                const beamBottomX1 = introData.grootX - 35;
+                const beamBottomX2 = introData.grootX + introData.grootW + 35;
+                const beamY1 = introData.shipY + introData.shipH * 0.7;
+                const beamY2 = canvas.height - GROUND_HEIGHT;
+
+                const grad = ctx.createLinearGradient(0, beamY1, 0, beamY2);
+                grad.addColorStop(0, 'rgba(0, 255, 255, 0.8)');
+                grad.addColorStop(1, 'rgba(0, 255, 150, 0.15)');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.moveTo(beamTopX1, beamY1);
+                ctx.lineTo(beamTopX2, beamY1);
+                ctx.lineTo(beamBottomX2, beamY2);
+                ctx.lineTo(beamBottomX1, beamY2);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // 3. Person (Groot) rendering + Sprechblase (während Phase 1)
+            if (introData.grootAlpha > 0) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(1, Math.max(0, introData.grootAlpha));
+
+                let activeGrootImg = null;
+                if (grootImages.length > 0) {
+                    const currentG = grootImages[introData.grootFrame % grootImages.length];
+                    if (isImageReady(currentG)) activeGrootImg = currentG;
+                }
+
+                if (activeGrootImg) {
+                    ctx.drawImage(activeGrootImg, introData.grootX, introData.grootY, introData.grootW, introData.grootH);
+                } else {
+                    ctx.fillStyle = '#00ffaa';
+                    ctx.fillRect(introData.grootX, introData.grootY, introData.grootW, introData.grootH);
+                }
+
+                if (introPhase === 1) {
+                    const bubbleX = introData.grootX + introData.grootW - 20;
+                    const bubbleY = introData.grootY - 45;
+                    
+                    ctx.fillStyle = 'white';
+                    if (ctx.roundRect) {
+                        ctx.beginPath();
+                        ctx.roundRect(bubbleX, bubbleY, 90, 36, 10);
+                        ctx.fill();
+                    } else {
+                        ctx.fillRect(bubbleX, bubbleY, 90, 36);
+                    }
+
+                    ctx.beginPath();
+                    ctx.moveTo(bubbleX + 15, bubbleY + 35);
+                    ctx.lineTo(bubbleX - 5, bubbleY + 50);
+                    ctx.lineTo(bubbleX + 30, bubbleY + 35);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'black';
+                    ctx.font = 'bold 16px sans-serif';
+                    ctx.fillText("I am Groot!", bubbleX + 14, bubbleY + 24);
+                }
+
+                ctx.restore();
+            }
+
+            // 3.1 Neuer Spielcharakter läuft von links ins Bild (in Phase 2)
+            if (introPhase === 2 && introData.heroX > -introData.heroW) {
+                ctx.save();
+                let activeHeroImg = null;
+                if (introData.heroState === 'running' && runImages.length > 0) {
+                    activeHeroImg = runImages[introData.heroFrame % runImages.length];
+                } else if (runImages.length > 0) {
+                    activeHeroImg = runImages[0];
+                }
+
+                if (activeHeroImg && isImageReady(activeHeroImg)) {
+                    ctx.drawImage(activeHeroImg, introData.heroX, introData.heroY, introData.heroW, introData.heroH);
+                } else {
+                    ctx.fillStyle = '#8B5A2B';
+                    ctx.fillRect(introData.heroX, introData.heroY, introData.heroW, introData.heroH);
+                }
+
+                // Sprechblase des Helden, wenn er steht: "Ich muss Groot retten!"
+                if (introData.heroState === 'standing') {
+                    const bubbleX = introData.heroX + 10;
+                    const bubbleY = introData.heroY - 60;
+                    const bubbleW = 215;
+                    const bubbleH = 38;
+
+                    ctx.fillStyle = 'white';
+                    if (ctx.roundRect) {
+                        ctx.beginPath();
+                        ctx.roundRect(bubbleX, bubbleY, bubbleW, bubbleH, 10);
+                        ctx.fill();
+                    } else {
+                        ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
+                    }
+
+                    // Dreieck zur Spielfigur
+                    ctx.beginPath();
+                    ctx.moveTo(bubbleX + 30, bubbleY + bubbleH);
+                    ctx.lineTo(bubbleX + 15, bubbleY + bubbleH + 15);
+                    ctx.lineTo(bubbleX + 50, bubbleY + bubbleH);
+                    ctx.fill();
+
+                    ctx.fillStyle = 'black';
+                    ctx.font = 'bold 15px sans-serif';
+                    ctx.fillText("Ich muss Groot retten!", bubbleX + 12, bubbleY + 24);
+                }
+
+                ctx.restore();
+            }
+
+            // 4. Raumschiff rendering
+            ctx.save();
+            if (isImageReady(shipImage)) {
+                ctx.shadowColor = '#00ffff';
+                ctx.shadowBlur = 15;
+                ctx.drawImage(shipImage, introData.shipX, introData.shipY, introData.shipW, introData.shipH);
+            } else {
+                ctx.fillStyle = '#cccccc';
+                ctx.beginPath();
+                ctx.ellipse(introData.shipX + introData.shipW/2, introData.shipY + introData.shipH/2, introData.shipW/2, introData.shipH/2, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function startGame() {
+            triggerStart();
+        }
+
+        function returnToStartMenu() {
+            gameStarted = false;
+            isIntro = false;
+            gameOver = false;
+            isPaused = false;
+            
+            player.isDucking = false;
+            player.shiftHeld = false;
+            player.h = 175;
+            player.y = canvas.height - player.h - GROUND_HEIGHT;
+            player.vy = 0;
+            player.grounded = true;
+            player.x = TARGET_PLAYER_X;
+            isBoosting = false;
+            boostCharge = 100;
+            updateBoostDisplay();
+
+            obstacles.length = 0;
+            projectiles.length = 0;
+            miniAlienProjectiles.length = 0;
+            explosionParticles.length = 0;
+            boostParticles.length = 0;
+            hearts.length = 0;
+            miniAliens.length = 0;
+
+            gameOverDiv.style.display = 'none';
+            pauseMsg.style.display = 'none';
+            topLeftDiv.style.display = 'none'; 
+            startMenuDiv.style.display = 'block';
+        }
+
+        function initGame() {
+            resizeCanvas();
+
+            const diff = DIFFICULTY_SETTINGS[currentDifficulty];
+            bg.speed = diff.speed;
+            obstacleMinGap = diff.minGap;
+            obstacleMaxGap = diff.maxGap;
+
+            // Zähler für die Death-Screen-Statistik zurücksetzen
+            statHeartsLost = 0;
+            statMeteorsDodged = 0;
+            statAliensEliminated = 0;
+
+            player.h = 175;
+            player.y = canvas.height - player.h - GROUND_HEIGHT;
+            player.vy = 0;
+            player.grounded = true;
+            player.frameIndex = 0;
+            player.frameTimer = 0;
+            player.isDucking = false;
+            player.shiftHeld = false;
+            player.lives = diff.maxLives;
+            player.invincibleTimer = 0;
+            player.x = TARGET_PLAYER_X;
+            isBoosting = false;
+            boostCharge = 100;
+            updateBoostDisplay();
+
+            score = 0;
+            gameOver = false;
+            isPaused = false;
+            lastShootTime = 0;
+            gameTimeElapsed = 0;
+            lastMiniAlienTime = performance.now(); 
+
+            obstacles.length = 0;
+            hearts.length = 0;
+            projectiles.length = 0;
+            miniAlienProjectiles.length = 0;
+            explosionParticles.length = 0;
+            boostParticles.length = 0;
+            miniAliens.length = 0;
+            bg.x = 0;
+            nextObstacleGap = 800;
+
+            scoreEl.textContent = 'Punkte: 0';
+            updateLivesDisplay();
+
+            gameOverDiv.style.display = 'none';
+            pauseMsg.style.display    = 'none';
+
+            lastTime = performance.now();
+        }
+
+        function tryJump() {
+            if (gameStarted && player.grounded && !gameOver && !isPaused && !isIntro) {
+                player.vy = JUMP_VELOCITY;
+                player.grounded = false;
+            }
+        }
+
+        function tryDuck() {
+            if (gameStarted && !gameOver && !isPaused && !isIntro) {
+                player.isDucking = true;
+                player.h = 100;
+                player.y = canvas.height - player.h - GROUND_HEIGHT;
+            }
+        }
+
+        function stopDuck() {
+            if (player.isDucking) {
+                player.isDucking = false;
+                player.h = 175;
+                player.y = canvas.height - player.h - GROUND_HEIGHT;
+            }
+        }
+
+        function tryBoost() {
+            if (gameStarted && !gameOver && !isPaused && !isIntro && !isBoosting && boostCharge >= 50) {
+                isBoosting = true;
+                boostCharge = Math.max(0, boostCharge - 50);
+                updateBoostDisplay();
+                const boostDuration = 0.3;
+                boostVelX = BOOST_FORWARD_DISTANCE / boostDuration;
+            }
+        }
+
+        function shoot(targetX, targetY) {
+            if (!gameStarted || gameOver || isPaused || isIntro) return;
+            const now = performance.now();
+            if (now - lastShootTime < SHOOT_COOLDOWN_MS) return;
+            lastShootTime = now;
+
+            const startX = player.x + player.w - 35;
+            const startY = player.y + (player.isDucking ? player.h / 2 : player.h / 3);
+            const dx = targetX - startX;
+            const dy = targetY - startY;
+            const dist = Math.hypot(dx, dy) || 1;
+            const speed = 22;
+            const dirX = dx / dist;
+            const dirY = dy / dist;
+
+            projectiles.push({
+                x: startX,
+                y: startY,
+                startX: startX,
+                startY: startY,
+                vx: dirX * speed,
+                vy: dirY * speed,
+                size: 7,
+                color: '#00ffff'
+            });
+        }
+
+        function shootMiniAlienProjectile(alien) {
+            const startX = alien.x + alien.w / 2;
+            const startY = alien.y + alien.h / 2;
+            const targetX = player.x + player.w / 2;
+            const targetY = player.y + player.h / 2;
+            const dx = targetX - startX;
+            const dy = targetY - startY;
+            const dist = Math.hypot(dx, dy) || 1;
+            const speed = MINI_ALIEN_PROJECTILE_SPEED;
+            const dirX = dx / dist;
+            const dirY = dy / dist;
+
+            miniAlienProjectiles.push({
+                x: startX,
+                y: startY,
+                vx: dirX * speed,
+                vy: dirY * speed,
+                size: 14,
+                pulse: 0
+            });
+        }
+
+        function togglePause() {
+            if (gameStarted && !gameOver && !isIntro) {
+                isPaused = !isPaused;
+                pauseMsg.style.display = isPaused ? 'block' : 'none';
+            }
+        }
+
+        window.addEventListener('keydown', e => {
+            if (!gameStarted && !isIntro) {
+                if (e.code === 'Space' || e.code === 'ArrowUp') {
+                    e.preventDefault();
+                    triggerStart();
+                }
+                return;
+            }
+
+            if (e.code === 'Escape') {
+                togglePause();
+                return;
+            }
+
+            if (isPaused || isIntro) return;
+
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                e.preventDefault();
+                tryJump();
+            } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                if (!player.shiftHeld) {
+                    player.shiftHeld = true;
+                    tryDuck();
+                }
+            } else if (e.code === 'CapsLock') {
+                e.preventDefault();
+                tryBoost();
+            }
+        });
+
+        window.addEventListener('keyup', e => {
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                player.shiftHeld = false;
+                stopDuck();
+            }
+        });
+
+        window.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            if (!gameStarted && !isIntro) {
+                triggerStart();
+            } else {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+                shoot(mouseX, mouseY);
+            }
+        });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (!gameStarted && !isIntro) {
+                triggerStart();
+            } else {
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                if (touch) {
+                    mouseX = touch.clientX - rect.left;
+                    mouseY = touch.clientY - rect.top;
+                    shoot(mouseX, mouseY);
+                }
+            }
+        });
+
+        startBtn.addEventListener('click', triggerStart);
+        restartBtn.addEventListener('click', returnToStartMenu);
+        resumeBtn.addEventListener('click', togglePause);
+        pauseRestartBtn.addEventListener('click', returnToStartMenu);
+
+        /* -------------------------------------------------------------
+         * 6. Kollisionen & Bewegungssystem
+         * ------------------------------------------------------------- */
+        function getPlayerHitbox() {
+            const padX = 42;
+            const padY = player.isDucking ? 12 : 28;
+            return {
+                x: player.x + padX,
+                y: player.y + padY,
+                w: player.w - (padX * 2),
+                h: Math.max(10, player.h - (padY * 2))
+            };
+        }
+
+        function getObstacleHitbox(obs) {
+            const padX = obs.w * 0.15;
+            const padY = obs.h * 0.10;
+            return {
+                x: obs.x + padX,
+                y: obs.y + padY,
+                w: obs.w - (padX * 2),
+                h: obs.h - (padY * 2)
+            };
+        }
+
+        function spawnMiniAlien() {
+            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS) return;
+            const now = performance.now();
+            if (now - lastMiniAlienTime < MINI_ALIEN_COOLDOWN_MS) return;
+
+            const lastObs = obstacles[obstacles.length - 1];
+            if (!lastObs || lastObs.x < canvas.width - 300) {
+                const minPos = 140;
+                const maxPos = canvas.height - GROUND_HEIGHT - 220;
+                const baseY = minPos + Math.random() * Math.max(10, maxPos - minPos);
+
+                miniAliens.push({
+                    x: canvas.width,
+                    baseY: baseY,
+                    y: baseY,
+                    w: MINI_ALIEN_SIZE,
+                    h: MINI_ALIEN_SIZE,
+                    bobTimer: Math.random() * Math.PI * 2,
+                    bobSpeed: 1.2 + Math.random() * 0.8,
+                    bobAmplitude: 35 + Math.random() * 25,
+                    driftTimer: Math.random() * Math.PI * 2,
+                    driftSpeed: 0.8,
+                    speed: 1.8 + Math.random() * 0.8,
+                    shootTimer: 0
+                });
+                lastMiniAlienTime = now;
+            }
+        }
+
+        function spawnObstacle() {
+            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS) return;
+
+            const diff = DIFFICULTY_SETTINGS[currentDifficulty];
+            const rand = Math.random();
+            let isAir = false;
+            let isFast = false;
+            let isDiagonal = false;
+            let isAlien = false;
+            let isRunningAlien = false;
+
+            if (rand < 0.22) {
+                isAir = true;
+            } else if (rand < 0.38) {
+                isFast = true;
+            } else if (rand < 0.52) {
+                isDiagonal = true;
+            } else if (rand < 0.72) {
+                isAlien = true;
+                isRunningAlien = Math.random() < 0.45;
+            }
+
+            let w = 70;
+            let h = 70;
+
+            if (isAlien) {
+                w = 210;
+                h = 210;
+            } else if (isAir) {
+                w = 85;
+                h = 65;
+            } else if (isFast) {
+                w = 60;
+                h = 60;
+            } else if (isDiagonal) {
+                w = 75;
+                h = 75;
+            } else {
+                w = 70 + Math.random() * 20;
+                h = 70 + Math.random() * 20;
+            }
+
+            const speedVariation = 0.8 + Math.random() * 0.35;
+            let x = canvas.width;
+            let y = 0;
+            let vx = bg.speed * (isFast ? 1.6 : 1.25) * speedVariation;
+
+            if (isAlien) {
+                vx = isRunningAlien ? bg.speed * 2.0 : bg.speed;
+            }
+
+            let vy = 0;
+            let isHighTarget = false;
+
+            if (isDiagonal) {
+                x = canvas.width + Math.random() * 50;
+                y = -h - Math.random() * 50;
+                isHighTarget = Math.random() < 0.5;
+                const standingY = canvas.height - 175 - GROUND_HEIGHT;
+                const targetY = isHighTarget ? (standingY - 90) : (standingY + 110);
+                const targetX = player.x + player.w / 2;
+                const dx = x - targetX;
+                const dy = targetY - y;
+                const distance = Math.hypot(dx, dy);
+                const totalSpeed = bg.speed * 1.5 * speedVariation;
+                vx = (dx / distance) * totalSpeed;
+                vy = (dy / distance) * totalSpeed;
+            } else if (isAir) {
+                y = canvas.height - GROUND_HEIGHT - 165;
+            } else {
+                y = canvas.height - h - GROUND_HEIGHT;
+            }
+
+            const totalMoveSpeed = Math.hypot(vx, vy);
+            const rotSpeed = -(totalMoveSpeed / 130) * (0.4 + Math.random() * 0.4);
+
+            const gapMultiplier = miniAliens.length > 0 ? 1.8 : 1.0;
+            nextObstacleGap = (obstacleMinGap + Math.random() * (obstacleMaxGap - obstacleMinGap)) * gapMultiplier;
+
+            const lastObs = obstacles[obstacles.length - 1];
+            if (lastObs && lastObs.isAir !== isAir) {
+                nextObstacleGap = Math.max(nextObstacleGap, 900 * gapMultiplier);
+            }
+
+            obstacles.push({
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                vx: vx,
+                vy: vy,
+                rotation: 0,
+                rotSpeed: rotSpeed,
+                isAir: isAir,
+                isFast: isFast,
+                isDiagonal: isDiagonal,
+                isHighTarget: isHighTarget,
+                isAlien: isAlien,
+                isRunning: isRunningAlien
+            });
+        }
+
+        function trySpawnHeart() {
+            const diff = DIFFICULTY_SETTINGS[currentDifficulty];
+            if (player.lives < diff.maxLives && Math.random() < diff.heart1) {
+                if (hearts.length === 0 || canvas.width - hearts[hearts.length - 1].x > 500) {
+                    hearts.push({
+                        x: canvas.width,
+                        y: canvas.height - GROUND_HEIGHT - 160 - Math.random() * 80,
+                        w: 36,
+                        h: 36,
+                        speed: bg.speed * 0.9
+                    });
+                }
+            }
+        }
+
+        function rectIntersect(r1, r2) {
+            return r1.x < r2.x + r2.w &&
+                   r1.x + r1.w > r2.x &&
+                   r1.y < r2.y + r2.h &&
+                   r1.y + r1.h > r2.y;
+        }
+
+        /* -------------------------------------------------------------
+         * 7. Update-Logik
+         * ------------------------------------------------------------- */
+        function update(delta) {
+            gameTimeElapsed += delta;
+            score += bg.speed * delta * 1.5;
+            scoreEl.textContent = `Punkte: ${Math.floor(score)}`;
+
+            bg.x -= bg.speed;
+            if (bg.x <= -canvas.width) bg.x = 0;
+
+            const diffSettings = DIFFICULTY_SETTINGS[currentDifficulty];
+            bg.speed += delta * diffSettings.speedInc;
+
+            // Boost Steuerung
+            if (!isBoosting && boostCharge < BOOST_MAX_CHARGE) {
+                boostCharge = Math.min(BOOST_MAX_CHARGE, boostCharge + BOOST_RECHARGE_RATE * delta);
+                updateBoostDisplay();
+            }
+
+            if (isBoosting) {
+                player.x += boostVelX * delta;
+                const maxBoostX = TARGET_PLAYER_X + BOOST_FORWARD_DISTANCE;
+                
+                // Feurige Boost-Partikel (Feuerschweif)
+                for (let i = 0; i < 8; i++) {
+                    const isSpark = Math.random() < 0.25;
+                    const pSize = isSpark ? (Math.random() * 4 + 2) : (Math.random() * 16 + 8);
+                    boostParticles.push({
+                        x: player.x + 15 + (Math.random() - 0.5) * 10,
+                        y: player.y + player.h * 0.5 + (Math.random() - 0.5) * (player.h * 0.5),
+                        vx: -(Math.random() * 16 + 10),
+                        vy: (Math.random() - 0.5) * 5 - 1.5,
+                        size: pSize,
+                        life: isSpark ? 0.15 : (Math.random() * 0.2 + 0.15),
+                        maxLife: isSpark ? 0.15 : 0.35,
+                        color: isSpark ? '#ffffff' : (Math.random() < 0.4 ? '#ff2200' : (Math.random() < 0.7 ? '#ff7700' : '#ffdd00')),
+                        isSpark: isSpark
+                    });
+                }
+
+                if (player.x >= maxBoostX) {
+                    player.x = maxBoostX;
+                    isBoosting = false;
+                }
+            } else if (player.x > TARGET_PLAYER_X) {
+                player.x -= (player.x - TARGET_PLAYER_X) * 6 * delta;
+                if (Math.abs(player.x - TARGET_PLAYER_X) < 0.5) player.x = TARGET_PLAYER_X;
+            }
+
+            // Unbesiegbarkeit nach Treffer
+            if (player.invincibleTimer > 0) {
+                player.invincibleTimer -= delta;
+            }
+
+            // Sprung-Physik
+            player.vy += GRAVITY;
+            player.y  += player.vy;
+
+            const groundY = canvas.height - player.h - GROUND_HEIGHT;
+            if (player.y >= groundY) {
+                player.y = groundY;
+                player.vy = 0;
+                player.grounded = true;
+            } else {
+                player.grounded = false;
+            }
+
+            // Lauf-Animation
+            if (player.grounded && runImages.length > 0) {
+                player.frameTimer += delta * 12;
+                if (player.frameTimer >= 1) {
+                    player.frameIndex = (player.frameIndex + 1) % runImages.length;
+                    player.frameTimer = 0;
+                }
+            }
+
+            // Mini-Aliens spawnen
+            if (gameStarted && !gameOver && !isPaused && Math.random() < diffSettings.miniAlienProbability) {
+                spawnMiniAlien();
+            }
+
+            // Mini-Aliens aktualisieren
+            for (let i = miniAliens.length - 1; i >= 0; i--) {
+                const alien = miniAliens[i];
+                alien.driftTimer += delta * alien.driftSpeed;
+                const driftOffset = Math.sin(alien.driftTimer) * 1.5;
+                alien.x -= (alien.speed + driftOffset);
+
+                alien.bobTimer += delta * alien.bobSpeed;
+                alien.y = alien.baseY + Math.sin(alien.bobTimer) * alien.bobAmplitude;
+
+                alien.shootTimer += delta * 1000;
+                if (alien.x < canvas.width - 60 && alien.shootTimer >= MINI_ALIEN_SHOOT_INTERVAL) {
+                    shootMiniAlienProjectile(alien);
+                    alien.shootTimer = 0;
+                }
+
+                if (alien.x + alien.w < 0) {
+                    miniAliens.splice(i, 1);
+                }
+            }
+
+            // Mini-Alien Projektile aktualisieren
+            for (let i = miniAlienProjectiles.length - 1; i >= 0; i--) {
+                const p = miniAlienProjectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.pulse += delta * 8;
+
+                const hitboxP = { x: p.x - p.size * 0.7, y: p.y - p.size * 0.7, w: p.size * 1.4, h: p.size * 1.4 };
+                const playerHitbox = getPlayerHitbox();
+
+                if (player.invincibleTimer <= 0 && rectIntersect(hitboxP, playerHitbox)) {
+                    player.lives--;
+                    statHeartsLost++;
+                    player.invincibleTimer = 1.5;
+                    updateLivesDisplay();
+                    miniAlienProjectiles.splice(i, 1);
+
+                    if (player.lives <= 0) {
+                        gameOver = true;
+                        document.getElementById('stat-score').textContent = Math.floor(score);
+                        document.getElementById('stat-hearts').textContent = statHeartsLost;
+                        document.getElementById('stat-meteors').textContent = statMeteorsDodged;
+                        document.getElementById('stat-aliens').textContent = statAliensEliminated;
+                        topLeftDiv.style.display = 'none';
+                        gameOverDiv.style.display = 'block';
+                    }
+                    continue;
+                }
+
+                if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    miniAlienProjectiles.splice(i, 1);
+                }
+            }
+
+            // Schüsse aktualisieren und Treffer prüfen
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+
+                const distTraveled = Math.hypot(p.x - p.startX, p.y - p.startY);
+                let hit = false;
+
+                if (distTraveled > MAX_SHOOT_RANGE || p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                const sortedAliens = [];
+                obstacles.forEach((obs, idx) => {
+                    if (obs.isAlien) {
+                        const obsHitbox = getObstacleHitbox(obs);
+                        sortedAliens.push({ distance: obs.x, isMini: false, obs: obs, originalIndex: idx });
+                    }
+                });
+                miniAliens.forEach((alien, idx) => {
+                    sortedAliens.push({ distance: alien.x, isMini: true, alien: alien, originalIndex: idx });
+                });
+                sortedAliens.sort((a, b) => a.distance - b.distance);
+
+                for (let j = 0; j < sortedAliens.length; j++) {
+                    const item = sortedAliens[j];
+                    if (item.isMini) {
+                        const alien = item.alien;
+                        if (p.x >= alien.x && p.x <= alien.x + alien.w && p.y >= alien.y && p.y <= alien.y + alien.h) {
+                            for (let k = 0; k < 15; k++) {
+                                explosionParticles.push({
+                                    x: alien.x + alien.w / 2,
+                                    y: alien.y + alien.h / 2,
+                                    vx: (Math.random() - 0.5) * 10,
+                                    vy: (Math.random() - 0.5) * 10,
+                                    size: Math.random() * 6 + 3,
+                                    life: 0.3,
+                                    color: MINI_ALIEN_COLOR
+                                });
+                            }
+                            score += 50;
+                            miniAliens.splice(item.originalIndex, 1);
+                            statAliensEliminated++;
+                            boostCharge = Math.min(BOOST_MAX_CHARGE, boostCharge + 10);
+                            updateBoostDisplay();
+                            miniAlienProjectiles.length = 0;
+                            hit = true;
+                            break;
+                        }
+                    } else {
+                        const obs = item.obs;
+                        const obsHitbox = getObstacleHitbox(obs);
+                        if (p.x >= obsHitbox.x && p.x <= obsHitbox.x + obsHitbox.w && p.y >= obsHitbox.y && p.y <= obsHitbox.y + obsHitbox.h) {
+                            for (let k = 0; k < 18; k++) {
+                                explosionParticles.push({
+                                    x: obs.x + obs.w / 2,
+                                    y: obs.y + obs.h / 2,
+                                    vx: (Math.random() - 0.5) * 12,
+                                    vy: (Math.random() - 0.5) * 12,
+                                    size: Math.random() * 8 + 4,
+                                    life: 0.4,
+                                    color: '#00ffcc'
+                                });
+                            }
+                            score += obs.isRunning ? 35 : 15;
+                            obstacles.splice(item.originalIndex, 1);
+                            statAliensEliminated++;
+                            boostCharge = Math.min(BOOST_MAX_CHARGE, boostCharge + 15);
+                            updateBoostDisplay();
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (hit) {
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Partikel aktualisieren
+            for (let i = explosionParticles.length - 1; i >= 0; i--) {
+                const ep = explosionParticles[i];
+                ep.x += ep.vx;
+                ep.y += ep.vy;
+                ep.life -= delta;
+                if (ep.life <= 0) {
+                    explosionParticles.splice(i, 1);
+                }
+            }
+
+            for (let i = boostParticles.length - 1; i >= 0; i--) {
+                const bp = boostParticles[i];
+                bp.x += bp.vx;
+                bp.y += bp.vy;
+                bp.life -= delta;
+                if (!bp.isSpark) {
+                    bp.size *= 0.94;
+                }
+                if (bp.life <= 0) {
+                    boostParticles.splice(i, 1);
+                }
+            }
+
+            // Hindernisse spawnen & bewegen
+            const lastObstacle = obstacles[obstacles.length - 1];
+            if (!lastObstacle || lastObstacle.x < canvas.width - nextObstacleGap) {
+                spawnObstacle();
+            }
+
+            trySpawnHeart();
+
+            const playerHitbox = getPlayerHitbox();
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.x -= obs.vx;
+                obs.y += obs.vy;
+                obs.rotation += obs.rotSpeed;
+
+                const obsHitbox = getObstacleHitbox(obs);
+
+                if (player.invincibleTimer <= 0 && rectIntersect(playerHitbox, obsHitbox)) {
+                    const damage = (obs.isAlien && obs.isRunning) ? 2 : 1;
+                    player.lives -= damage;
+                    if (player.lives < 0) player.lives = 0;
+                    statHeartsLost += damage;
+                    player.invincibleTimer = 1.5;
+                    updateLivesDisplay();
+                    obstacles.splice(i, 1);
+
+                    if (player.lives <= 0) {
+                        gameOver = true;
+                        document.getElementById('stat-score').textContent = Math.floor(score);
+                        document.getElementById('stat-hearts').textContent = statHeartsLost;
+                        document.getElementById('stat-meteors').textContent = statMeteorsDodged;
+                        document.getElementById('stat-aliens').textContent = statAliensEliminated;
+                        topLeftDiv.style.display = 'none';
+                        gameOverDiv.style.display = 'block';
+                    }
+                    continue;
+                }
+
+                if (obs.x + obs.w < 0 || obs.y > canvas.height) {
+                    if (!obs.isAlien) {
+                        statMeteorsDodged++;
+                    }
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // Herzen einsammeln
+            for (let i = hearts.length - 1; i >= 0; i--) {
+                const h = hearts[i];
+                h.x -= h.speed;
+
+                const maxL = DIFFICULTY_SETTINGS[currentDifficulty].maxLives;
+                if (player.lives >= maxL) {
+                    hearts.splice(i, 1);
+                    continue;
+                }
+
+                const heartHitbox = { x: h.x, y: h.y, w: h.w, h: h.h };
+                if (rectIntersect(playerHitbox, heartHitbox)) {
+                    if (player.lives < maxL) {
+                        player.lives++;
+                        updateLivesDisplay();
+                    }
+                    hearts.splice(i, 1);
+                    continue;
+                }
+
+                if (h.x + h.w < 0) {
+                    hearts.splice(i, 1);
+                }
+            }
+        }
+
+        /* -------------------------------------------------------------
+         * 8. Render
+         * ------------------------------------------------------------- */
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const hasRunningAlien = obstacles.some(obs => obs.isAlien && obs.isRunning);
+            ctx.save();
+            if (hasRunningAlien && !gameOver && !isPaused && gameStarted) {
+                const shakeX = (Math.random() - 0.5) * 10;
+                const shakeY = (Math.random() - 0.5) * 10;
+                ctx.translate(shakeX, shakeY);
+            }
+
+            // ---- 1. Hintergrund ----
+            if (isImageReady(bgImage)) {
+                ctx.drawImage(bgImage, bg.x, 0, canvas.width, canvas.height);
+                ctx.drawImage(bgImage, bg.x + canvas.width, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#050515';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffffff';
+                stars.forEach(star => {
+                    let sx = (star.x - bg.x * star.speedFactor) % canvas.width;
+                    if (sx < 0) sx += canvas.width;
+                    ctx.fillRect(sx, star.y, star.size, star.size);
+                });
+            }
+
+            // Boden
+            ctx.fillStyle = '#222244';
+            ctx.fillRect(0, canvas.height - GROUND_HEIGHT, canvas.width, GROUND_HEIGHT);
+
+            // ---- 2. Hindernisse ----
+            obstacles.forEach(obs => {
+                ctx.save();
+                ctx.translate(obs.x + obs.w / 2, obs.y + obs.h / 2);
+
+                if (obs.isAlien) {
+                    if (isImageReady(alienImage)) {
+                        ctx.shadowColor = obs.isRunning ? '#ff0077' : '#00ffcc';
+                        ctx.shadowBlur = obs.isRunning ? 25 : 18;
+                        ctx.drawImage(alienImage, -obs.w / 2, -obs.h / 2, obs.w, obs.h);
+                    } else {
+                        ctx.fillStyle = obs.isRunning ? '#ff0055' : '#00ff66';
+                        ctx.fillRect(-obs.w / 2, -obs.h / 2, obs.w, obs.h);
+                    }
+                } else {
+                    ctx.rotate(obs.rotation);
+                    if (isImageReady(asteroidImage)) {
+                        if (obs.isDiagonal) {
+                            ctx.shadowColor = '#ffaa00';
+                            ctx.shadowBlur = 22;
+                        } else if (obs.isFast) {
+                            ctx.shadowColor = '#ff0055';
+                            ctx.shadowBlur = 22;
+                        } else if (obs.isAir) {
+                            ctx.shadowColor = '#ff5500';
+                            ctx.shadowBlur = 18;
+                        }
+                        ctx.drawImage(asteroidImage, -obs.w / 2, -obs.h / 2, obs.w, obs.h);
+                    } else {
+                        ctx.fillStyle = obs.isDiagonal ? '#ffaa00' : (obs.isFast ? '#ff0055' : (obs.isAir ? '#ff6600' : '#885533'));
+                        ctx.beginPath();
+                        ctx.arc(0, 0, obs.w / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            });
+
+            // ---- 2.1 MINI-ALIENS RENDEREN ----
+            miniAliens.forEach(alien => {
+                ctx.save();
+                if (isImageReady(miniAlienImage)) {
+                    ctx.shadowColor = MINI_ALIEN_COLOR;
+                    ctx.shadowBlur = 15;
+                    ctx.drawImage(miniAlienImage, alien.x, alien.y, alien.w, alien.h);
+                } else {
+                    ctx.fillStyle = MINI_ALIEN_COLOR;
+                    ctx.beginPath();
+                    ctx.arc(alien.x + alien.w / 2, alien.y + alien.h / 2, alien.w / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
+
+            // ---- 3. Herzen (Items) ----
+            hearts.forEach(h => {
+                ctx.save();
+                ctx.font = '32px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#ff0000';
+                ctx.shadowBlur = 12;
+                ctx.fillText('❤️', h.x + h.w / 2, h.y + h.h / 2);
+                ctx.restore();
+            });
+
+            // ---- 4. Projektile ----
+            projectiles.forEach(p => {
+                ctx.save();
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            miniAlienProjectiles.forEach(p => {
+                ctx.save();
+                const pulseRadius = p.size + Math.sin(p.pulse) * 3;
+                
+                ctx.shadowColor = '#ff0044';
+                ctx.shadowBlur = 16;
+
+                const grad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, pulseRadius);
+                grad.addColorStop(0, '#ffffff');
+                grad.addColorStop(0.4, '#ff3366');
+                grad.addColorStop(1, 'rgba(255, 0, 68, 0)');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, pulseRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, pulseRadius * 0.35, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            });
+
+            // ---- 5. Partikel ----
+            explosionParticles.forEach(ep => {
+                ctx.save();
+                ctx.fillStyle = ep.color;
+                ctx.shadowColor = ep.color;
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(ep.x, ep.y, ep.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // Boost-Partikel Render-Effekt (Feuerschweif)
+            boostParticles.forEach(bp => {
+                ctx.save();
+                ctx.fillStyle = bp.color;
+                ctx.shadowColor = bp.color;
+                ctx.shadowBlur = bp.isSpark ? 12 : 8;
+                ctx.globalAlpha = Math.max(0, bp.life / bp.maxLife);
+                ctx.beginPath();
+                ctx.arc(bp.x, bp.y, Math.max(0.5, bp.size), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // ---- 6. Spieler (Groot-Retter) ----
+            ctx.save();
+            if (player.invincibleTimer > 0) {
+                if (Math.floor(player.invincibleTimer * 15) % 2 === 0) {
+                    ctx.globalAlpha = 0.3;
+                }
+            }
+
+            let activeImg = null;
+            if (!gameStarted) {
+                if (runImages.length > 0 && isImageReady(runImages[0])) {
+                    activeImg = runImages[0];
+                }
+            } else {
+                if (!player.grounded && isImageReady(jumpImage)) {
+                    activeImg = jumpImage;
+                } else if (runImages.length > 0) {
+                    const current = runImages[player.frameIndex % runImages.length];
+                    if (isImageReady(current)) {
+                        activeImg = current;
+                    }
+                }
+            }
+
+            if (activeImg) {
+                ctx.drawImage(activeImg, player.x, player.y, player.w, player.h);
+            } else {
+                ctx.fillStyle = '#8B5A2B';
+                ctx.fillRect(player.x, player.y, player.w, player.h);
+            }
+            ctx.restore();
+
+            // ---- 7. Fadenkreuz / Zielcursor ----
+            if (gameStarted && !gameOver && !isPaused) {
+                const startX = player.x + player.w - 35;
+                const startY = player.y + (player.isDucking ? player.h / 2 : player.h / 3);
+                const dx = mouseX - startX;
+                const dy = mouseY - startY;
+                const dist = Math.hypot(dx, dy) || 1;
+
+                let renderX = mouseX;
+                let renderY = mouseY;
+
+                if (dist > MAX_SHOOT_RANGE) {
+                    renderX = startX + (dx / dist) * MAX_SHOOT_RANGE;
+                    renderY = startY + (dy / dist) * MAX_SHOOT_RANGE;
+                }
+
+                ctx.save();
+                ctx.strokeStyle = '#00ffff'; 
+                ctx.lineWidth = 2;
+                ctx.shadowColor = '#00ffff';
+                ctx.shadowBlur = 10;
+
+                const r = 12;
+                ctx.beginPath();
+                ctx.arc(renderX, renderY, r, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(renderX, renderY - r - 5); ctx.lineTo(renderX, renderY - r + 2);
+                ctx.moveTo(renderX, renderY + r - 2); ctx.lineTo(renderX, renderY + r + 5);
+                ctx.moveTo(renderX - r - 5, renderY); ctx.lineTo(renderX - r + 2, renderY);
+                ctx.moveTo(renderX + r - 2, renderY); ctx.lineTo(renderX + r + 5, renderY);
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(renderX - 1, renderY - 1, 2, 2);
+                ctx.restore();
+            }
+
+            ctx.restore(); // Shake-Ende
+        }
+
+        /* -------------------------------------------------------------
+         * 9. Haupt-Gameloop
+         * ------------------------------------------------------------- */
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const delta = Math.min((timestamp - lastTime) / 1000, 0.1);
+            lastTime = timestamp;
+
+            if (isIntro) {
+                updateIntro(delta);
+                renderIntro();
+            } else if (!gameStarted) {
+                render();
+            } else if (!gameOver && !isPaused) {
+                update(delta);
+                render();
+            }
+
+            animFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // Start
+        resizeCanvas();
+        animFrameId = requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
