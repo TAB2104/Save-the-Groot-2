@@ -77,7 +77,7 @@
             white-space: nowrap;
         }
 
-        #startMenu, #gameover, #pauseMsg {
+        #startMenu, #gameover, #pauseMsg, #winScreen {
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
@@ -92,7 +92,7 @@
         }
 
         #startMenu { display: block; }
-        #gameover, #pauseMsg { display: none; }
+        #gameover, #pauseMsg, #winScreen { display: none; }
 
         .menu-subtext {
             font-size: 1.3rem;
@@ -100,7 +100,7 @@
             color: #ccc;
         }
 
-        /* Death-Screen Statistik-Box */
+        /* Death-Screen & Win-Screen Statistik-Box */
         .stats-box {
             background: rgba(255, 255, 255, 0.08);
             border-radius: 10px;
@@ -124,33 +124,6 @@
             font-weight: bold;
             color: #00ffff;
         }
-
-        /* Schwierigkeitsgrad-Auswahl */
-        .difficulty-select {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            margin-top: 20px;
-        }
-
-        .diff-btn {
-            margin-top: 0 !important;
-            font-size: 1rem !important;
-            padding: 0.5rem 1.2rem !important;
-            background-color: #444 !important;
-            border: 2px solid transparent !important;
-            opacity: 0.7;
-        }
-
-        .diff-btn.active {
-            opacity: 1;
-            border-color: #fff !important;
-            box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
-        }
-
-        .diff-btn[data-diff="easy"].active { background-color: #28a745 !important; }
-        .diff-btn[data-diff="normal"].active { background-color: #fd7e14 !important; }
-        .diff-btn[data-diff="hard"].active { background-color: #dc3545 !important; }
 
         button {
             margin-top: 1.8rem;
@@ -183,7 +156,7 @@
     
     <div id="ui">
         <div id="top-left">
-            <div id="score">Punkte: 0</div>
+            <div id="score">Distanz: 500m</div>
             <div id="lives">❤️❤️❤️❤️❤️</div>
             <div id="boost-container">
                 <div id="boost-bar"></div>
@@ -197,12 +170,6 @@
         <div id="startMenu">
             <div>🚀 Save the Groot</div>
             <div class="menu-subtext">Weiche Hindernissen aus & schieße laufende und Mini-Aliens ab!</div>
-            
-            <div class="difficulty-select">
-                <button class="diff-btn" data-diff="easy">Einfach</button>
-                <button class="diff-btn active" data-diff="normal">Normal</button>
-                <button class="diff-btn" data-diff="hard">Schwer</button>
-            </div>
 
             <button id="startBtn">Spiel starten</button>
         </div>
@@ -210,12 +177,24 @@
         <div id="gameover">
             <div>💥 Game Over!</div>
             <div class="stats-box">
-                <div><span>Erreichte Punkte:</span> <span id="stat-score">0</span></div>
+                <div><span>Verbleibende Distanz:</span> <span id="stat-score">0m</span></div>
                 <div><span>Verlorene Herzen:</span> <span id="stat-hearts">0</span></div>
                 <div><span>Ausgewichene Meteoriten:</span> <span id="stat-meteors">0</span></div>
                 <div><span>Eliminierte Aliens:</span> <span id="stat-aliens">0</span></div>
             </div>
             <button id="restartBtn">Nochmal spielen</button>
+        </div>
+
+        <div id="winScreen">
+            <div>🎉 Gewonnen!</div>
+            <div class="menu-subtext">Du hast das Spiel geschafft und Groot gerettet!</div>
+            <div class="stats-box">
+                <div><span>Verbleibende Distanz:</span> <span>0m</span></div>
+                <div><span>Verlorene Herzen:</span> <span id="win-stat-hearts">0</span></div>
+                <div><span>Ausgewichene Meteoriten:</span> <span id="win-stat-meteors">0</span></div>
+                <div><span>Eliminierte Aliens:</span> <span id="win-stat-aliens">0</span></div>
+            </div>
+            <button id="winRestartBtn">Nochmal spielen</button>
         </div>
 
         <div id="pauseMsg">
@@ -266,10 +245,11 @@
         const startBtn        = document.getElementById('startBtn');
         const gameOverDiv     = document.getElementById('gameover');
         const restartBtn      = document.getElementById('restartBtn');
+        const winScreenDiv    = document.getElementById('winScreen');
+        const winRestartBtn   = document.getElementById('winRestartBtn');
         const pauseMsg        = document.getElementById('pauseMsg');
         const resumeBtn       = document.getElementById('resumeBtn');
         const pauseRestartBtn = document.getElementById('pauseRestartBtn');
-        const diffBtns        = document.querySelectorAll('.diff-btn');
 
         const GROUND_HEIGHT = 65; 
         const TARGET_PLAYER_X = 240; 
@@ -303,6 +283,32 @@
         const MINI_ALIEN_SHOOT_INTERVAL = 2600;   
         const MINI_ALIEN_COOLDOWN_MS = 22000;     
         let lastMiniAlienTime = 0;
+
+        // BOSS SPACESHIP & RETTUNGS-GROOT
+        const bossShip = {
+            active: false,
+            x: 0,
+            y: 0,
+            w: 380,
+            h: 200,
+            hp: 5,
+            maxHp: 5,
+            destroyed: false,
+            targetX: 0
+        };
+
+        const rescuedGroot = {
+            active: false,
+            x: 0,
+            y: 0,
+            w: 130,
+            h: 130,
+            vy: 0,
+            grounded: false
+        };
+
+        let finalSequence = false;
+        let finalFade = 0;
 
         // DEATH-SCREEN STATISTIK ZÄHLER
         let statHeartsLost = 0;
@@ -343,7 +349,7 @@
         const projectiles = [];
         const explosionParticles = [];
 
-        let score = 0;
+        let score = 500;
         let gameStarted = false;
         let gameOver = false;
         let isPaused = false;
@@ -456,15 +462,6 @@
         /* -------------------------------------------------------------
          * 5. Intro & Spielablauf & Steuerung
          * ------------------------------------------------------------- */
-        diffBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                diffBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentDifficulty = btn.dataset.diff;
-                updateLivesDisplay();
-            });
-        });
-
         function updateLivesDisplay() {
             const maxL = DIFFICULTY_SETTINGS[currentDifficulty].maxLives;
             let heartsText = '';
@@ -585,7 +582,7 @@
                 } else if (introData.heroState === 'standing') {
                     // Bleibt stehen und zeigt Sprechblase für 2.2 Sekunden
                     introData.speechTimer += delta;
-                    if (introData.speechTimer >= 2.2) {
+                    if (introData.speechTimer >= 2) {
                         // Intro beenden, echtes Spiel starten
                         isIntro = false;
                         gameStarted = true;
@@ -684,7 +681,7 @@
                     ctx.fill();
                     
                     ctx.fillStyle = 'black';
-                    ctx.font = 'bold 16px sans-serif';
+                    ctx.font = 'bold 13px sans-serif';
                     ctx.fillText("I am Groot!", bubbleX + 14, bubbleY + 24);
                 }
 
@@ -775,6 +772,12 @@
             boostCharge = 100;
             updateBoostDisplay();
 
+            bossShip.active = false;
+            bossShip.destroyed = false;
+            bossShip.hp = 5;
+            rescuedGroot.active = false;
+            rescuedGroot.grounded = false;
+
             obstacles.length = 0;
             projectiles.length = 0;
             miniAlienProjectiles.length = 0;
@@ -784,6 +787,7 @@
             miniAliens.length = 0;
 
             gameOverDiv.style.display = 'none';
+            winScreenDiv.style.display = 'none';
             pauseMsg.style.display = 'none';
             topLeftDiv.style.display = 'none'; 
             startMenuDiv.style.display = 'block';
@@ -817,7 +821,19 @@
             boostCharge = 100;
             updateBoostDisplay();
 
-            score = 0;
+            bossShip.active = false;
+            bossShip.destroyed = false;
+            bossShip.hp = 5;
+            bossShip.w = 380;
+            bossShip.h = 200;
+            rescuedGroot.active = false;
+            rescuedGroot.grounded = false;
+            rescuedGroot.w = 130;
+            rescuedGroot.h = 130;
+
+            score = 500;
+            finalSequence = false;
+            finalFade = 0;
             gameOver = false;
             isPaused = false;
             lastShootTime = 0;
@@ -834,10 +850,11 @@
             bg.x = 0;
             nextObstacleGap = 800;
 
-            scoreEl.textContent = 'Punkte: 0';
+            scoreEl.textContent = 'Distanz: 500m';
             updateLivesDisplay();
 
             gameOverDiv.style.display = 'none';
+            winScreenDiv.style.display = 'none';
             pauseMsg.style.display    = 'none';
 
             lastTime = performance.now();
@@ -1003,6 +1020,7 @@
 
         startBtn.addEventListener('click', triggerStart);
         restartBtn.addEventListener('click', returnToStartMenu);
+        winRestartBtn.addEventListener('click', returnToStartMenu);
         resumeBtn.addEventListener('click', togglePause);
         pauseRestartBtn.addEventListener('click', returnToStartMenu);
 
@@ -1032,7 +1050,7 @@
         }
 
         function spawnMiniAlien() {
-            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS) return;
+            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS || score <= 0) return;
             const now = performance.now();
             if (now - lastMiniAlienTime < MINI_ALIEN_COOLDOWN_MS) return;
 
@@ -1061,7 +1079,7 @@
         }
 
         function spawnObstacle() {
-            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS) return;
+            if (!gameStarted || gameOver || isPaused || gameTimeElapsed < SPAWN_DELAY_SECONDS || score <= 0) return;
 
             const diff = DIFFICULTY_SETTINGS[currentDifficulty];
             const rand = Math.random();
@@ -1163,6 +1181,7 @@
         }
 
         function trySpawnHeart() {
+            if (score <= 0) return;
             const diff = DIFFICULTY_SETTINGS[currentDifficulty];
             if (player.lives < diff.maxLives && Math.random() < diff.heart1) {
                 if (hearts.length === 0 || canvas.width - hearts[hearts.length - 1].x > 500) {
@@ -1189,14 +1208,80 @@
          * ------------------------------------------------------------- */
         function update(delta) {
             gameTimeElapsed += delta;
-            score += bg.speed * delta * 1.5;
-            scoreEl.textContent = `Punkte: ${Math.floor(score)}`;
+            
+            // Distanz verringern (bei Boost schneller)
+            if (score > 150 || (!bossShip.destroyed && !rescuedGroot.active)) {
+                const boostMultiplier = isBoosting ? 3.0 : 1.0;
+                score = Math.max(0, score - bg.speed * delta * 1.5 * boostMultiplier);
+            }
+
+            scoreEl.textContent = `Distanz: ${Math.floor(score)}m`;
 
             bg.x -= bg.speed;
             if (bg.x <= -canvas.width) bg.x = 0;
 
             const diffSettings = DIFFICULTY_SETTINGS[currentDifficulty];
             bg.speed += delta * diffSettings.speedInc;
+
+            // ---- BOOT / SPACESHIP BOSS SPAWN bei <= 150m ----
+            if (score <= 0 && !bossShip.active && !bossShip.destroyed) {
+                bossShip.active = true;
+                bossShip.x = canvas.width + 50;
+                bossShip.y = canvas.height * 0.22;
+                bossShip.targetX = (canvas.width - bossShip.w) / 2;
+                bossShip.hp = 5;
+            }
+
+            if (bossShip.active) {
+                bossShip.x += (bossShip.targetX - bossShip.x) * 2.0 * delta;
+
+                if (score <= 0) {
+                    const targetPlayerX = bossShip.x - (player.w + 80);
+                    if (player.x < targetPlayerX) {
+                        player.x += 180 * delta;
+                        if (player.x > targetPlayerX) player.x = targetPlayerX;
+                    }
+                }
+            }
+
+            // ---- GROOT FALLEN & LANDEN LOGIK ----
+            if (rescuedGroot.active && !rescuedGroot.grounded) {
+                rescuedGroot.vy += GRAVITY;
+                rescuedGroot.y += rescuedGroot.vy;
+                const grootGroundY = canvas.height - rescuedGroot.h - GROUND_HEIGHT;
+                if (rescuedGroot.y >= grootGroundY) {
+                    rescuedGroot.y = grootGroundY;
+                    rescuedGroot.vy = 0;
+                    rescuedGroot.grounded = true;
+
+                    // Groot landet neben dem Spieler -> Finale vorbereiten
+                    score = 0;
+                    scoreEl.textContent = 'Distanz: 0m';
+                    finalSequence = true;
+                    player.x = canvas.width / 2 - player.w - 25;
+                    rescuedGroot.x = canvas.width / 2 + 25;
+                    finalFade = 0;
+                    topLeftDiv.style.display = 'none';
+                    return;
+                }
+            }
+
+            // ---- FINALE: Beide Charaktere in der Mitte -> Sprechblase & Fade ----
+            if (finalSequence) {
+                player.x += (canvas.width / 2 - player.w - 25 - player.x) * 5 * delta;
+                rescuedGroot.x += (canvas.width / 2 + 25 - rescuedGroot.x) * 5 * delta;
+                const playerReady = Math.abs(player.x - (canvas.width / 2 - player.w - 25)) < 1;
+                const grootReady = Math.abs(rescuedGroot.x - (canvas.width / 2 + 25)) < 1;
+                if (playerReady && grootReady) finalFade = Math.min(1, finalFade + delta / 2.5);
+                if (finalFade >= 1) {
+                    gameOver = true;
+                    document.getElementById('win-stat-hearts').textContent = statHeartsLost;
+                    document.getElementById('win-stat-meteors').textContent = statMeteorsDodged;
+                    document.getElementById('win-stat-aliens').textContent = statAliensEliminated;
+                    winScreenDiv.style.display = 'block';
+                }
+                return;
+            }
 
             // Boost Steuerung
             if (!isBoosting && boostCharge < BOOST_MAX_CHARGE) {
@@ -1306,7 +1391,7 @@
 
                     if (player.lives <= 0) {
                         gameOver = true;
-                        document.getElementById('stat-score').textContent = Math.floor(score);
+                        document.getElementById('stat-score').textContent = `${Math.max(0, Math.floor(score))}m`;
                         document.getElementById('stat-hearts').textContent = statHeartsLost;
                         document.getElementById('stat-meteors').textContent = statMeteorsDodged;
                         document.getElementById('stat-aliens').textContent = statAliensEliminated;
@@ -1330,7 +1415,59 @@
                 const distTraveled = Math.hypot(p.x - p.startX, p.y - p.startY);
                 let hit = false;
 
-                if (distTraveled > MAX_SHOOT_RANGE || p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                if ((score > 0 && distTraveled > MAX_SHOOT_RANGE) || p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // Trefferprüfung auf das BOSS SPACESHIP
+                if (bossShip.active && !bossShip.destroyed) {
+                    const shipHitbox = { x: bossShip.x - 70, y: bossShip.y - 70, w: bossShip.w + 140, h: bossShip.h + 140 };
+                    if (p.x >= shipHitbox.x && p.x <= shipHitbox.x + shipHitbox.w &&
+                        p.y >= shipHitbox.y && p.y <= shipHitbox.y + shipHitbox.h) {
+                        
+                        bossShip.hp--;
+                        for (let k = 0; k < 12; k++) {
+                            explosionParticles.push({
+                                x: p.x,
+                                y: p.y,
+                                vx: (Math.random() - 0.5) * 10,
+                                vy: (Math.random() - 0.5) * 10,
+                                size: Math.random() * 6 + 3,
+                                life: 0.3,
+                                color: '#00ffff'
+                            });
+                        }
+
+                        if (bossShip.hp <= 0) {
+                            bossShip.destroyed = true;
+                            bossShip.active = false;
+
+                            // Große Explosion beim Zerstören des Raumschiffs
+                            for (let k = 0; k < 40; k++) {
+                                explosionParticles.push({
+                                    x: bossShip.x + bossShip.w / 2 + (Math.random() - 0.5) * bossShip.w,
+                                    y: bossShip.y + bossShip.h / 2 + (Math.random() - 0.5) * bossShip.h,
+                                    vx: (Math.random() - 0.5) * 16,
+                                    vy: (Math.random() - 0.5) * 16,
+                                    size: Math.random() * 12 + 4,
+                                    life: 0.6,
+                                    color: Math.random() < 0.5 ? '#ff4500' : '#ffff00'
+                                });
+                            }
+
+                            // Groot fällt heraus
+                            rescuedGroot.active = true;
+                            rescuedGroot.x = bossShip.x + bossShip.w / 2 - rescuedGroot.w / 2;
+                            rescuedGroot.y = bossShip.y + bossShip.h / 2;
+                            rescuedGroot.vy = -4; // Leichter Hopser vor dem Fallen
+                        }
+
+                        hit = true;
+                    }
+                }
+
+                if (hit) {
                     projectiles.splice(i, 1);
                     continue;
                 }
@@ -1363,7 +1500,6 @@
                                     color: MINI_ALIEN_COLOR
                                 });
                             }
-                            score += 50;
                             miniAliens.splice(item.originalIndex, 1);
                             statAliensEliminated++;
                             boostCharge = Math.min(BOOST_MAX_CHARGE, boostCharge + 10);
@@ -1387,7 +1523,6 @@
                                     color: '#00ffcc'
                                 });
                             }
-                            score += obs.isRunning ? 35 : 15;
                             obstacles.splice(item.originalIndex, 1);
                             statAliensEliminated++;
                             boostCharge = Math.min(BOOST_MAX_CHARGE, boostCharge + 15);
@@ -1455,7 +1590,7 @@
 
                     if (player.lives <= 0) {
                         gameOver = true;
-                        document.getElementById('stat-score').textContent = Math.floor(score);
+                        document.getElementById('stat-score').textContent = `${Math.max(0, Math.floor(score))}m`;
                         document.getElementById('stat-hearts').textContent = statHeartsLost;
                         document.getElementById('stat-meteors').textContent = statMeteorsDodged;
                         document.getElementById('stat-aliens').textContent = statAliensEliminated;
@@ -1533,7 +1668,39 @@
             ctx.fillStyle = '#222244';
             ctx.fillRect(0, canvas.height - GROUND_HEIGHT, canvas.width, GROUND_HEIGHT);
 
-            // ---- 2. Hindernisse ----
+            // ---- 2. SPACESHIP BOSS ----
+            if (bossShip.active && !bossShip.destroyed) {
+                ctx.save();
+                if (isImageReady(shipImage)) {
+                    ctx.shadowColor = '#ff0055';
+                    ctx.shadowBlur = 20;
+                    ctx.drawImage(shipImage, bossShip.x, bossShip.y, bossShip.w, bossShip.h);
+                } else {
+                    ctx.fillStyle = '#cccccc';
+                    ctx.beginPath();
+                    ctx.ellipse(bossShip.x + bossShip.w/2, bossShip.y + bossShip.h/2, bossShip.w/2, bossShip.h/2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // ---- 2.1 GERETTETER GROOT ----
+            if (rescuedGroot.active) {
+                ctx.save();
+                let activeGrootImg = null;
+                if (grootImages.length > 0 && isImageReady(grootImages[0])) {
+                    activeGrootImg = grootImages[0];
+                }
+                if (activeGrootImg) {
+                    ctx.drawImage(activeGrootImg, rescuedGroot.x, rescuedGroot.y, rescuedGroot.w, rescuedGroot.h);
+                } else {
+                    ctx.fillStyle = '#00ffaa';
+                    ctx.fillRect(rescuedGroot.x, rescuedGroot.y, rescuedGroot.w, rescuedGroot.h);
+                }
+                ctx.restore();
+            }
+
+            // ---- 2.2 Hindernisse ----
             obstacles.forEach(obs => {
                 ctx.save();
                 ctx.translate(obs.x + obs.w / 2, obs.y + obs.h / 2);
@@ -1571,7 +1738,7 @@
                 ctx.restore();
             });
 
-            // ---- 2.1 MINI-ALIENS RENDEREN ----
+            // ---- 2.3 MINI-ALIENS RENDEREN ----
             miniAliens.forEach(alien => {
                 ctx.save();
                 if (isImageReady(miniAlienImage)) {
@@ -1693,6 +1860,40 @@
             }
             ctx.restore();
 
+            // ---- 7. FINALE: Sprechblase & langsames Schwarzblenden ----
+            if (finalSequence) {
+                const bubbleW = 330, bubbleH = 72;
+                const bubbleX = player.x + player.w / 2 - bubbleW / 2;
+                const bubbleY = player.y - bubbleH - 25;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.roundRect(bubbleX, bubbleY, bubbleW, bubbleH, 18);
+                ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(bubbleX + 85, bubbleY + bubbleH);
+                ctx.lineTo(bubbleX + 105, bubbleY + bubbleH + 22);
+                ctx.lineTo(bubbleX + 125, bubbleY + bubbleH);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#111111';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('Endlich habe ich dich Groot!', bubbleX + bubbleW / 2, bubbleY + bubbleH / 2);
+                ctx.restore();
+
+                if (finalFade > 0) {
+                    ctx.save();
+                    ctx.fillStyle = `rgba(0,0,0,${finalFade})`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                }
+            }
+
             // ---- 7. Fadenkreuz / Zielcursor ----
             if (gameStarted && !gameOver && !isPaused) {
                 const startX = player.x + player.w - 35;
@@ -1704,7 +1905,7 @@
                 let renderX = mouseX;
                 let renderY = mouseY;
 
-                if (dist > MAX_SHOOT_RANGE) {
+                if (score > 0 && dist > MAX_SHOOT_RANGE) {
                     renderX = startX + (dx / dist) * MAX_SHOOT_RANGE;
                     renderY = startY + (dy / dist) * MAX_SHOOT_RANGE;
                 }
