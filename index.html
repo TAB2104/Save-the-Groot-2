@@ -310,6 +310,10 @@
         let finalSequence = false;
         let finalFade = 0;
 
+        // BOSS-TREFFER: kurzer, deutlich sichtbarer Bildschirm-Ruck
+        let screenShakeTime = 0;
+        let screenShakePower = 0;
+
         // DEATH-SCREEN STATISTIK ZÄHLER
         let statHeartsLost = 0;
         let statMeteorsDodged = 0;
@@ -377,6 +381,8 @@
             grootH: 130,
             grootFrame: 0,
             grootFrameTimer: 0,
+            grootRotation: 0,
+            grootRotationSpeed: 0,
             
             beamAlpha: 0,
             grootAlpha: 1,
@@ -494,6 +500,8 @@
             introData.grootY = canvas.height - introData.grootH - GROUND_HEIGHT;
             introData.grootFrame = 0; // Ruhig stehen am Anfang
             introData.grootFrameTimer = 0;
+            introData.grootRotation = 0;
+            introData.grootRotationSpeed = 0;
             introData.grootAlpha = 1;
 
             introData.shipW = 380; 
@@ -529,6 +537,10 @@
                 }
             } else if (introPhase === 1) {
                 // Phase 1: Traktorstrahl an & Person wird hochgesaugt
+                // Groot dreht sich dabei immer schneller.
+                introData.grootRotationSpeed = Math.min(28, introData.grootRotationSpeed + delta * 9);
+                introData.grootRotation += introData.grootRotationSpeed * delta;
+
                 introData.grootFrameTimer += delta * 30; // Sehr schnell!
                 if (introData.grootFrameTimer >= 1) {
                     introData.grootFrame = (introData.grootFrame + 1) % Math.max(1, grootImages.length);
@@ -654,11 +666,15 @@
                     if (isImageReady(currentG)) activeGrootImg = currentG;
                 }
 
+                // Um die Mitte des Charakters drehen.
+                ctx.translate(introData.grootX + introData.grootW / 2, introData.grootY + introData.grootH / 2);
+                ctx.rotate(introData.grootRotation);
+
                 if (activeGrootImg) {
-                    ctx.drawImage(activeGrootImg, introData.grootX, introData.grootY, introData.grootW, introData.grootH);
+                    ctx.drawImage(activeGrootImg, -introData.grootW / 2, -introData.grootH / 2, introData.grootW, introData.grootH);
                 } else {
                     ctx.fillStyle = '#00ffaa';
-                    ctx.fillRect(introData.grootX, introData.grootY, introData.grootW, introData.grootH);
+                    ctx.fillRect(-introData.grootW / 2, -introData.grootH / 2, introData.grootW, introData.grootH);
                 }
 
                 if (introPhase === 1) {
@@ -834,6 +850,8 @@
             score = 500;
             finalSequence = false;
             finalFade = 0;
+            screenShakeTime = 0;
+            screenShakePower = 0;
             gameOver = false;
             isPaused = false;
             lastShootTime = 0;
@@ -1208,6 +1226,12 @@
          * ------------------------------------------------------------- */
         function update(delta) {
             gameTimeElapsed += delta;
+
+            // Screen-Shake nach Boss-Treffern abklingen lassen.
+            if (screenShakeTime > 0) {
+                screenShakeTime = Math.max(0, screenShakeTime - delta);
+                if (screenShakeTime === 0) screenShakePower = 0;
+            }
             
             // Distanz verringern (bei Boost schneller)
             if (score > 150 || (!bossShip.destroyed && !rescuedGroot.active)) {
@@ -1246,7 +1270,9 @@
 
             // ---- GROOT FALLEN & LANDEN LOGIK ----
             if (rescuedGroot.active && !rescuedGroot.grounded) {
-                rescuedGroot.vy += GRAVITY;
+                // Groot soll deutlich langsamer aus dem Raumschiff herausfallen.
+                // Dafür bekommt er eine eigene, stark reduzierte Fallbeschleunigung.
+                rescuedGroot.vy += GRAVITY * 0.08;
                 rescuedGroot.y += rescuedGroot.vy;
                 const grootGroundY = canvas.height - rescuedGroot.h - GROUND_HEIGHT;
                 if (rescuedGroot.y >= grootGroundY) {
@@ -1272,7 +1298,8 @@
                 rescuedGroot.x += (canvas.width / 2 + 25 - rescuedGroot.x) * 5 * delta;
                 const playerReady = Math.abs(player.x - (canvas.width / 2 - player.w - 25)) < 1;
                 const grootReady = Math.abs(rescuedGroot.x - (canvas.width / 2 + 25)) < 1;
-                if (playerReady && grootReady) finalFade = Math.min(1, finalFade + delta / 2.5);
+                // Nach dem Aufstellen 5 Sekunden lang langsam ins Schwarz überblenden.
+                if (playerReady && grootReady) finalFade = Math.min(1, finalFade + delta / 5.0);
                 if (finalFade >= 1) {
                     gameOver = true;
                     document.getElementById('win-stat-hearts').textContent = statHeartsLost;
@@ -1427,15 +1454,37 @@
                         p.y >= shipHitbox.y && p.y <= shipHitbox.y + shipHitbox.h) {
                         
                         bossShip.hp--;
-                        for (let k = 0; k < 12; k++) {
+
+                        // Jeder Treffer: kräftiger Screen-Shake + deutlich längere Trefferpartikel.
+                        screenShakeTime = 0.24;
+                        screenShakePower = 12;
+
+                        for (let k = 0; k < 24; k++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const speed = 4 + Math.random() * 12;
+                            explosionParticles.push({
+                                x: p.x + (Math.random() - 0.5) * 8,
+                                y: p.y + (Math.random() - 0.5) * 8,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed,
+                                size: Math.random() * 7 + 4,
+                                life: 0.65 + Math.random() * 0.35,
+                                color: Math.random() < 0.35 ? '#ffffff' : '#00ffff'
+                            });
+                        }
+
+                        // Einige langsamere Funken bleiben extra lange sichtbar.
+                        for (let k = 0; k < 8; k++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const speed = 2 + Math.random() * 5;
                             explosionParticles.push({
                                 x: p.x,
                                 y: p.y,
-                                vx: (Math.random() - 0.5) * 10,
-                                vy: (Math.random() - 0.5) * 10,
-                                size: Math.random() * 6 + 3,
-                                life: 0.3,
-                                color: '#00ffff'
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed,
+                                size: Math.random() * 5 + 6,
+                                life: 0.9 + Math.random() * 0.45,
+                                color: '#7fffff'
                             });
                         }
 
@@ -1460,7 +1509,7 @@
                             rescuedGroot.active = true;
                             rescuedGroot.x = bossShip.x + bossShip.w / 2 - rescuedGroot.w / 2;
                             rescuedGroot.y = bossShip.y + bossShip.h / 2;
-                            rescuedGroot.vy = -4; // Leichter Hopser vor dem Fallen
+                            rescuedGroot.vy = -1.6; // Sehr sanfter Hopser vor dem langsamen Fallen
                         }
 
                         hit = true;
@@ -1643,10 +1692,27 @@
 
             const hasRunningAlien = obstacles.some(obs => obs.isAlien && obs.isRunning);
             ctx.save();
-            if (hasRunningAlien && !gameOver && !isPaused && gameStarted) {
-                const shakeX = (Math.random() - 0.5) * 10;
-                const shakeY = (Math.random() - 0.5) * 10;
-                ctx.translate(shakeX, shakeY);
+
+            // Bestehenden Alien-Shake und Boss-Treffer-Shake kombinieren.
+            if (!gameOver && !isPaused && gameStarted) {
+                let shakeX = 0;
+                let shakeY = 0;
+
+                if (hasRunningAlien) {
+                    shakeX += (Math.random() - 0.5) * 10;
+                    shakeY += (Math.random() - 0.5) * 10;
+                }
+
+                if (screenShakeTime > 0) {
+                    const falloff = screenShakeTime / 0.24;
+                    const strength = screenShakePower * falloff;
+                    shakeX += (Math.random() - 0.5) * strength;
+                    shakeY += (Math.random() - 0.5) * strength;
+                }
+
+                if (shakeX !== 0 || shakeY !== 0) {
+                    ctx.translate(shakeX, shakeY);
+                }
             }
 
             // ---- 1. Hintergrund ----
@@ -1769,9 +1835,20 @@
             // ---- 4. Projektile ----
             projectiles.forEach(p => {
                 ctx.save();
-                ctx.fillStyle = p.color;
+
+                // Längerer Schussstrahl: der Trefferweg bleibt sichtbar.
+                const trailX = p.x - p.vx * 1.1;
+                const trailY = p.y - p.vy * 1.1;
+                ctx.strokeStyle = p.color;
+                ctx.lineWidth = Math.max(3, p.size * 0.9);
                 ctx.shadowColor = p.color;
-                ctx.shadowBlur = 10;
+                ctx.shadowBlur = 14;
+                ctx.beginPath();
+                ctx.moveTo(trailX, trailY);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+
+                ctx.fillStyle = p.color;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
                 ctx.fill();
