@@ -218,7 +218,18 @@
         ];
 
         const JUMP_FRAME_PATH = 'walk1.png';
-        const BG_IMAGE_PATH   = 'bg.png';        
+        const BG_FADE_PATH     = 'bg_fade.png';
+
+        // Mehrere Hintergründe: zufällige Reihenfolge
+        const BG_IMAGE_PATHS = [
+            'bg.png',
+            'bg1.png',
+            'bg2.png',
+            'bg3.png',
+            'bg4.png',
+            'bg5.png'
+        ];
+
         const ASTEROID_PATH   = 'asteroid.png';  
         const ALIEN_PATH      = 'alien.png';
         const MINI_ALIEN_PATH = 'mini.png';
@@ -346,7 +357,13 @@
             invincibleTimer: 0
         };
 
-        const bg = { x: 0, speed: 3.5 };
+        const bg = {
+            x: 0,
+            speed: 3.5,
+            images: [],
+            currentIndex: 0,
+            nextIndex: 1
+        };
         const obstacles = [];
         const hearts = [];
         const stars = [];
@@ -411,8 +428,14 @@
         const jumpImage = new Image();
         jumpImage.src = JUMP_FRAME_PATH;
 
-        const bgImage = new Image();
-        bgImage.src = BG_IMAGE_PATH;
+        const bgFadeImage = new Image();
+        bgFadeImage.src = BG_FADE_PATH;
+
+        BG_IMAGE_PATHS.forEach(path => {
+            const img = new Image();
+            img.src = path;
+            bg.images.push(img);
+        });
 
         const asteroidImage = new Image();
         asteroidImage.src = ASTEROID_PATH;
@@ -436,6 +459,37 @@
 
         function isImageReady(img) {
             return img && img.complete && img.naturalWidth !== 0;
+        }
+
+        function chooseNextBackground() {
+            if (bg.images.length <= 1) return;
+            let next = Math.floor(Math.random() * bg.images.length);
+            while (next === bg.currentIndex) next = Math.floor(Math.random() * bg.images.length);
+            bg.nextIndex = next;
+        }
+
+        function drawScrollingBackground(targetCtx) {
+            const current = bg.images[bg.currentIndex];
+            const next = bg.images[bg.nextIndex];
+
+            if (!isImageReady(current)) {
+                targetCtx.fillStyle = '#050515';
+                targetCtx.fillRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+
+            // Aktuellen Hintergrund zeichnen
+            targetCtx.drawImage(current, bg.x, 0, canvas.width, canvas.height);
+
+            // Den Übergang (bg_fade) direkt rechts daneben zeichnen
+            if (isImageReady(bgFadeImage)) {
+                targetCtx.drawImage(bgFadeImage, bg.x + canvas.width, 0, canvas.width, canvas.height);
+            }
+
+            // Den nächsten Hintergrund direkt rechts neben den Übergang zeichnen
+            if (isImageReady(next)) {
+                targetCtx.drawImage(next, bg.x + canvas.width * 2, 0, canvas.width, canvas.height);
+            }
         }
 
         /* -------------------------------------------------------------
@@ -511,6 +565,11 @@
             introData.targetShipX = introData.grootX + (introData.grootW / 2) - (introData.shipW / 2);
 
             introData.beamAlpha = 0;
+            bg.x = 0;
+            
+            // Fixer Start-Hintergrund für identischen Beginn
+            bg.currentIndex = 0;
+            chooseNextBackground();
 
             // Helden-Setup für Intro Phase 2
             introData.heroW = 175;
@@ -525,7 +584,13 @@
 
         function updateIntro(delta) {
             bg.x -= 0.8;
-            if (bg.x <= -canvas.width) bg.x = 0;
+            
+            // Wenn der aktuelle Hintergrund und der Fade komplett durchgelaufen sind (2x Canvas Width)
+            if (bg.x <= -canvas.width * 2) {
+                bg.x += canvas.width * 2;
+                bg.currentIndex = bg.nextIndex;
+                chooseNextBackground();
+            }
 
             if (introPhase === 0) {
                 // Phase 0: Raumschiff fliegt schnell über die Person, Charakter steht still
@@ -536,10 +601,12 @@
                     introPhase = 1;
                 }
             } else if (introPhase === 1) {
-                // Phase 1: Traktorstrahl an & Person wird hochgesaugt
-                // Groot dreht sich dabei immer schneller.
-                introData.grootRotationSpeed = Math.min(28, introData.grootRotationSpeed + delta * 9);
+                // Schneller nach oben, aber langsamer drehen.
+                introData.grootRotationSpeed = Math.min(7, introData.grootRotationSpeed + delta * 3.0);
                 introData.grootRotation += introData.grootRotationSpeed * delta;
+
+                // Leichtes, unregelmäßiges Wackeln während des Ansaugens.
+                introData.grootX = canvas.width * 0.55 + Math.sin(performance.now() * 0.014) * 8;
 
                 introData.grootFrameTimer += delta * 30; // Sehr schnell!
                 if (introData.grootFrameTimer >= 1) {
@@ -551,7 +618,7 @@
                     introData.beamAlpha += delta * 2;
                 }
 
-                introData.grootY -= delta * 120; // Schwebegeschwindigkeit
+                introData.grootY -= delta * 190; // Deutlich schneller nach oben
 
                 const targetY = introData.shipY + introData.shipH * 0.5;
                 if (introData.grootY <= targetY) {
@@ -595,11 +662,19 @@
                     // Bleibt stehen und zeigt Sprechblase für 2.2 Sekunden
                     introData.speechTimer += delta;
                     if (introData.speechTimer >= 2) {
-                        // Intro beenden, echtes Spiel starten
+                        // Intro beenden, echtes Spiel starten.
+                        // Position, Animation und Hintergrund werden 1:1 übernommen,
+                        // damit der Übergang ohne sichtbaren Reset weiterläuft.
+                        player.x = introData.heroX;
+                        player.y = introData.heroY;
+                        player.frameIndex = introData.heroFrame;
+                        player.frameTimer = introData.heroFrameTimer;
+                        player.grounded = true;
+
                         isIntro = false;
                         gameStarted = true;
                         topLeftDiv.style.display = 'flex';
-                        initGame();
+                        initGame(true);
                     }
                 }
             }
@@ -609,19 +684,7 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // 1. Hintergrund
-            if (isImageReady(bgImage)) {
-                ctx.drawImage(bgImage, bg.x, 0, canvas.width, canvas.height);
-                ctx.drawImage(bgImage, bg.x + canvas.width, 0, canvas.width, canvas.height);
-            } else {
-                ctx.fillStyle = '#050515';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#ffffff';
-                stars.forEach(star => {
-                    let sx = (star.x - bg.x * star.speedFactor) % canvas.width;
-                    if (sx < 0) sx += canvas.width;
-                    ctx.fillRect(sx, star.y, star.size, star.size);
-                });
-            }
+            drawScrollingBackground(ctx);
 
             // Boden
             ctx.fillStyle = '#222244';
@@ -745,7 +808,7 @@
                     ctx.fill();
 
                     ctx.fillStyle = 'black';
-                    ctx.font = 'bold 15px sans-serif';
+                    ctx.font = 'bold 18px sans-serif';
                     ctx.fillText("Ich muss Groot retten!", bubbleX + 12, bubbleY + 24);
                 }
 
@@ -809,7 +872,8 @@
             startMenuDiv.style.display = 'block';
         }
 
-        function initGame() {
+        function initGame(preserveIntroState = false) {
+            // resizeCanvas darf den laufenden Hintergrund nicht zurücksetzen.
             resizeCanvas();
 
             const diff = DIFFICULTY_SETTINGS[currentDifficulty];
@@ -823,16 +887,26 @@
             statAliensEliminated = 0;
 
             player.h = 175;
-            player.y = canvas.height - player.h - GROUND_HEIGHT;
-            player.vy = 0;
-            player.grounded = true;
-            player.frameIndex = 0;
-            player.frameTimer = 0;
+            if (!preserveIntroState) {
+                player.y = canvas.height - player.h - GROUND_HEIGHT;
+                player.vy = 0;
+                player.grounded = true;
+                player.frameIndex = 0;
+                player.frameTimer = 0;
+                player.x = TARGET_PLAYER_X;
+            } else {
+                // Nahtlos an die Position des Intro-Helden anschließen.
+                player.y = introData.heroY;
+                player.vy = 0;
+                player.grounded = true;
+                player.frameIndex = introData.heroFrame;
+                player.frameTimer = introData.heroFrameTimer;
+                player.x = introData.heroX;
+            }
             player.isDucking = false;
             player.shiftHeld = false;
             player.lives = diff.maxLives;
             player.invincibleTimer = 0;
-            player.x = TARGET_PLAYER_X;
             isBoosting = false;
             boostCharge = 100;
             updateBoostDisplay();
@@ -865,7 +939,17 @@
             explosionParticles.length = 0;
             boostParticles.length = 0;
             miniAliens.length = 0;
-            bg.x = 0;
+
+            // Beim normalen Neustart neuen Hintergrund wählen.
+            // Beim Intro -> Spiel Übergang bleibt Hintergrund und Scrollposition exakt erhalten.
+            if (!preserveIntroState) {
+                bg.x = 0;
+                if (bg.images.length > 0) {
+                    bg.currentIndex = 0; // Fixer Start-Hintergrund für identischen Beginn
+                    chooseNextBackground();
+                }
+            }
+
             nextObstacleGap = 800;
 
             scoreEl.textContent = 'Distanz: 500m';
@@ -1221,6 +1305,22 @@
                    r1.y + r1.h > r2.y;
         }
 
+        function spawnImpactParticles(x, y, color, scale = 1, count = 12, lifeMin = 0.3, lifeMax = 0.5) {
+            for (let k = 0; k < count; k++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = (2.5 + Math.random() * 7.5) * scale;
+                explosionParticles.push({
+                    x: x + (Math.random() - 0.5) * 4 * scale,
+                    y: y + (Math.random() - 0.5) * 4 * scale,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: (Math.random() * 4 + 2.5) * scale,
+                    life: lifeMin + Math.random() * (lifeMax - lifeMin),
+                    color: color
+                });
+            }
+        }
+
         /* -------------------------------------------------------------
          * 7. Update-Logik
          * ------------------------------------------------------------- */
@@ -1242,7 +1342,13 @@
             scoreEl.textContent = `Distanz: ${Math.floor(score)}m`;
 
             bg.x -= bg.speed;
-            if (bg.x <= -canvas.width) bg.x = 0;
+            
+            // Wenn der aktuelle Hintergrund und der Fade komplett durchgelaufen sind (2x Canvas Width)
+            if (bg.x <= -canvas.width * 2) {
+                bg.x += canvas.width * 2;
+                bg.currentIndex = bg.nextIndex;
+                chooseNextBackground();
+            }
 
             const diffSettings = DIFFICULTY_SETTINGS[currentDifficulty];
             bg.speed += delta * diffSettings.speedInc;
@@ -1443,6 +1549,29 @@
                 let hit = false;
 
                 if ((score > 0 && distTraveled > MAX_SHOOT_RANGE) || p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    const missX = Math.max(0, Math.min(canvas.width, p.x));
+                    const missY = Math.max(0, Math.min(canvas.height, p.y));
+                    spawnImpactParticles(missX, missY, '#00ffff', 0.45, 7, 0.18, 0.32);
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // Meteorit zuerst prüfen: Schüsse dürfen nicht durch Meteoriten fliegen.
+                let meteorHit = false;
+                for (let m = obstacles.length - 1; m >= 0; m--) {
+                    const obs = obstacles[m];
+                    if (obs.isAlien) continue;
+                    const obsHitbox = getObstacleHitbox(obs);
+                    if (p.x >= obsHitbox.x && p.x <= obsHitbox.x + obsHitbox.w &&
+                        p.y >= obsHitbox.y && p.y <= obsHitbox.y + obsHitbox.h) {
+                        spawnImpactParticles(p.x, p.y, '#ff8c00', 0.8, 18, 0.35, 0.65);
+                        spawnImpactParticles(p.x, p.y, '#ffd27a', 0.5, 8, 0.2, 0.45);
+                        meteorHit = true;
+                        break;
+                    }
+                }
+
+                if (meteorHit) {
                     projectiles.splice(i, 1);
                     continue;
                 }
@@ -1455,36 +1584,29 @@
                         
                         bossShip.hp--;
 
-                        // Jeder Treffer: kräftiger Screen-Shake + deutlich längere Trefferpartikel.
+                        // Jeder Treffer erzeugt eine längere Explosion auf und um das Schiff.
                         screenShakeTime = 0.24;
                         screenShakePower = 12;
 
-                        for (let k = 0; k < 24; k++) {
-                            const angle = Math.random() * Math.PI * 2;
-                            const speed = 4 + Math.random() * 12;
-                            explosionParticles.push({
-                                x: p.x + (Math.random() - 0.5) * 8,
-                                y: p.y + (Math.random() - 0.5) * 8,
-                                vx: Math.cos(angle) * speed,
-                                vy: Math.sin(angle) * speed,
-                                size: Math.random() * 7 + 4,
-                                life: 0.65 + Math.random() * 0.35,
-                                color: Math.random() < 0.35 ? '#ffffff' : '#00ffff'
-                            });
-                        }
+                        spawnImpactParticles(p.x, p.y, '#00ffff', 1.05, 24, 0.65, 1.05);
+                        spawnImpactParticles(p.x, p.y, '#ffffff', 0.65, 8, 0.45, 0.8);
 
-                        // Einige langsamere Funken bleiben extra lange sichtbar.
-                        for (let k = 0; k < 8; k++) {
-                            const angle = Math.random() * Math.PI * 2;
-                            const speed = 2 + Math.random() * 5;
+                        for (let k = 0; k < 20; k++) {
+                            const hitX = bossShip.x + Math.random() * bossShip.w;
+                            const hitY = bossShip.y + Math.random() * bossShip.h;
+                            const angle = Math.atan2(
+                                hitY - (bossShip.y + bossShip.h / 2),
+                                hitX - (bossShip.x + bossShip.w / 2)
+                            );
+                            const speed = 3 + Math.random() * 8;
                             explosionParticles.push({
-                                x: p.x,
-                                y: p.y,
+                                x: hitX,
+                                y: hitY,
                                 vx: Math.cos(angle) * speed,
                                 vy: Math.sin(angle) * speed,
-                                size: Math.random() * 5 + 6,
-                                life: 0.9 + Math.random() * 0.45,
-                                color: '#7fffff'
+                                size: Math.random() * 6 + 3,
+                                life: 0.75 + Math.random() * 0.55,
+                                color: Math.random() < 0.25 ? '#ffffff' : '#00ffff'
                             });
                         }
 
@@ -1716,19 +1838,7 @@
             }
 
             // ---- 1. Hintergrund ----
-            if (isImageReady(bgImage)) {
-                ctx.drawImage(bgImage, bg.x, 0, canvas.width, canvas.height);
-                ctx.drawImage(bgImage, bg.x + canvas.width, 0, canvas.width, canvas.height);
-            } else {
-                ctx.fillStyle = '#050515';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#ffffff';
-                stars.forEach(star => {
-                    let sx = (star.x - bg.x * star.speedFactor) % canvas.width;
-                    if (sx < 0) sx += canvas.width;
-                    ctx.fillRect(sx, star.y, star.size, star.size);
-                });
-            }
+            drawScrollingBackground(ctx);
 
             // Boden
             ctx.fillStyle = '#222244';
@@ -1939,6 +2049,7 @@
 
             // ---- 7. FINALE: Sprechblase & langsames Schwarzblenden ----
             if (finalSequence) {
+                // Sprechblase des Retters
                 const bubbleW = 330, bubbleH = 72;
                 const bubbleX = player.x + player.w / 2 - bubbleW / 2;
                 const bubbleY = player.y - bubbleH - 25;
@@ -1961,6 +2072,31 @@
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('Endlich habe ich dich Groot!', bubbleX + bubbleW / 2, bubbleY + bubbleH / 2);
+                ctx.restore();
+
+                // Sprechblase von Groot
+                const grootBubbleW = 170, grootBubbleH = 60;
+                const grootBubbleX = rescuedGroot.x + rescuedGroot.w / 2 - grootBubbleW / 2;
+                const grootBubbleY = rescuedGroot.y - grootBubbleH - 25;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.roundRect(grootBubbleX, grootBubbleY, grootBubbleW, grootBubbleH, 18);
+                ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(grootBubbleX + grootBubbleW / 2 - 10, grootBubbleY + grootBubbleH);
+                ctx.lineTo(grootBubbleX + grootBubbleW / 2, grootBubbleY + grootBubbleH + 20);
+                ctx.lineTo(grootBubbleX + grootBubbleW / 2 + 10, grootBubbleY + grootBubbleH);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#111111';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('I am Groot!', grootBubbleX + grootBubbleW / 2, grootBubbleY + grootBubbleH / 2);
                 ctx.restore();
 
                 if (finalFade > 0) {
